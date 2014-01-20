@@ -35,10 +35,6 @@
 
 #define HT_SIZE_VSRV	(1<<8)
 
-#define MAX_need	(1<<16)
-#define MAX_use		MAX_need
-#define MAX_provide	MAX_need
-
 // http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=714039
 // should be removed, when the bug will be fixed
 #define BUGFIX_DEBIAN_714039
@@ -48,11 +44,19 @@ struct hsearch_data ht_lsb_m2v = {0};
 // value to macro
 struct hsearch_data ht_lsb_v2m = {0};
 
+char *description = NULL;
+
+#define MAX_need	(1<<16)
+#define MAX_use		MAX_need
+#define MAX_provide	MAX_need
+#define MAX_before	MAX_need
+
 char    *need[MAX_need+1]    = {NULL};
 char     *use[MAX_use+1]     = {NULL};
 char *provide[MAX_provide+1] = {NULL};
+char  *before[MAX_before+1]  = {NULL};
 
-int need_count=0, use_count=0, provide_count=0;
+int need_count=0, use_count=0, provide_count=0, before_count=0;
 
 #define RELATION(relation, service) {\
 	if(relation ## _count >= MAX_ ## relation) {\
@@ -70,6 +74,9 @@ static inline void USE(char *const service) {
 }
 static inline void PROVIDE(char *const service) {
 	RELATION(provide, service);
+}
+static inline void BEFORE(char *const service) {
+	RELATION(before, service);
 }
 
 void syntax() {
@@ -217,7 +224,7 @@ static inline int isall(const char *const services, char **ret) {
 
 	int rc = 0;
 	*ret = xmalloc(BUFSIZ);
-	char *ptr = *ret, *ret_end = &(*ret[BUFSIZ]);
+	char *ptr = *ret, *ret_end = &(*ret)[BUFSIZ];
 
 	void isall_parse_service(const char *const service, void *arg) {
 		if(!strcmp(service, "*")) {
@@ -276,7 +283,7 @@ void lsb_header_provide(const char *const service, void *arg) {
 }
 
 static void lsb_header_parse(const char *const header, char *value) {
-	printf("%s: %s\n", header, value);
+//	printf("%s: %s\n", header, value);
 
 	if(!strcmp(header, "provides")) {
 		services_foreach(value, lsb_header_provide, NULL);
@@ -306,18 +313,23 @@ static void lsb_header_parse(const char *const header, char *value) {
 	} else
 */
 	if(!strcmp(header, "short-description")) {
+		description = value;
 	} else
 /*
 	if(!strcmp(header, "description")) {
 	} else
 */
 	if(!strcmp(header, "should-start")) {
+		char *services_expanded = lsb_expand(value);
+		USE(services_expanded);
 	} else
 /*
 	if(!strcmp(header, "should-stop")) {
 	} else
 */
 	if(!strcmp(header, "x-start-before")) {
+		char *services_expanded = lsb_expand(value);
+		BEFORE(services_expanded);
 	} else
 /*
 	if(!strcmp(header, "x-stop-after")) {
@@ -399,7 +411,30 @@ l_lsb_parse_end:
 	return;
 }
 
+static inline void print_relation(char **relation) {
+	char **ptr = relation;
+	while(*ptr != NULL) {
+		printf(" %s", *ptr);
+		ptr++;
+	}
+
+	return;
+}
+
 void lsb_print_orc() {
+
+	if(description != NULL)
+		printf("%s\n", description);
+	printf("%s", "depend() {\n\tuse");
+	print_relation(use);
+	printf("%s", "\n\tneed");
+	print_relation(need);
+	printf("%s", "\n\tbefore");
+	print_relation(before);
+	printf("%s", "\n\tprovide");
+	print_relation(provide);
+	printf("\n}\n");
+
 	return;
 }
 
@@ -408,7 +443,7 @@ int main(int argc, char *argv[]) {
 		syntax();
 
 	const char *initdscript = argv[1];
-	const char *service	= basename(strdup(initdscript));
+//	const char *service	= basename(strdup(initdscript));
 
 	if(access(initdscript, R_OK)) {
 		fprintf(stderr, "Cannot get read access to file \"%s\": %i: %s\n",

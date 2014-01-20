@@ -29,7 +29,7 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 #include <regex.h>	// regexec()
 #include <unistd.h>	// access()
 
-#include "malloc.h"
+#include "xmalloc.h"
 
 #define PATH_INSSERV "/etc/insserv.conf"
 

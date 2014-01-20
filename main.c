@@ -35,6 +35,10 @@
 
 #define HT_SIZE_VSRV	(1<<8)
 
+#define MAX_need	(1<<16)
+#define MAX_use		MAX_need
+#define MAX_provide	MAX_need
+
 // http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=714039
 // should be removed, when the bug will be fixed
 #define BUGFIX_DEBIAN_714039
@@ -43,6 +47,30 @@
 struct hsearch_data ht_lsb_m2v = {0};
 // value to macro
 struct hsearch_data ht_lsb_v2m = {0};
+
+char    *need[MAX_need+1]    = {NULL};
+char     *use[MAX_use+1]     = {NULL};
+char *provide[MAX_provide+1] = {NULL};
+
+int need_count=0, use_count=0, provide_count=0;
+
+#define RELATION(relation, service) {\
+	if(relation ## _count >= MAX_ ## relation) {\
+		fprintf(stderr, "Too many records.\n");\
+		exit(EOVERFLOW);\
+	}\
+	relation[relation ## _count++] = service;\
+}
+
+static inline void NEED(char *const service) {
+	RELATION(need, service);
+}
+static inline void USE(char *const service) {
+	RELATION(use, service);
+}
+static inline void PROVIDE(char *const service) {
+	RELATION(provide, service);
+}
 
 void syntax() {
 	fprintf(stderr, "lsb2rcconf /path/to/init/script\n");
@@ -242,13 +270,60 @@ char *lsb_expand(char *services) {
 	return ret;
 }
 
+void lsb_header_provide(const char *const service, void *arg) {
+
+	return;
+}
+
 static void lsb_header_parse(const char *const header, char *value) {
 	printf("%s: %s\n", header, value);
 
 	if(!strcmp(header, "provides")) {
+		services_foreach(value, lsb_header_provide, NULL);
 	} else
 	if(!strcmp(header, "required-start")) {
-	}
+		char *services_expanded = lsb_expand(value);
+#ifdef BUGFIX_DEBIAN_714039
+		char *services_fixed;
+		if(isall(value, &services_fixed)) {
+			NEED(services_fixed);
+			USE("*");
+			free(services_expanded);
+		} else {
+#endif
+			NEED(services_expanded);
+#ifdef BUGFIX_DEBIAN_714039
+			free(services_fixed);
+		}
+#endif
+	} else
+/*
+	if(!strcmp(header, "required-stop")) {
+	} else
+	if(!strcmp(header, "default-start")) {
+	} else
+	if(!strcmp(header, "default-stop")) {
+	} else
+*/
+	if(!strcmp(header, "short-description")) {
+	} else
+/*
+	if(!strcmp(header, "description")) {
+	} else
+*/
+	if(!strcmp(header, "should-start")) {
+	} else
+/*
+	if(!strcmp(header, "should-stop")) {
+	} else
+*/
+	if(!strcmp(header, "x-start-before")) {
+	} else
+/*
+	if(!strcmp(header, "x-stop-after")) {
+	} else
+*/
+	{}
 
 	return;
 }

@@ -19,6 +19,7 @@ INSTDIR = $(DESTDIR)$(PREFIX)
 
 objs=\
 main.o\
+malloc.o\
 
 binary=lsb2rcconf
 

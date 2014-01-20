@@ -29,11 +29,15 @@
 #include <regex.h>	// regexec()
 #include <unistd.h>	// access()
 
-//#include "malloc.h"
+#include "malloc.h"
 
 #define PATH_INSSERV "/etc/insserv.conf"
 
 #define HT_SIZE_VSRV	(1<<8)
+
+// http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=714039
+// should be removed, when the bug will be fixed
+#define BUGFIX_DEBIAN_714039
 
 // macro to value
 struct hsearch_data ht_lsb_m2v = {0};
@@ -45,6 +49,25 @@ void syntax() {
 	exit(EINVAL);
 }
 
+typedef void (*services_foreach_funct_t)(const char *const service, void *arg);
+
+static inline int services_foreach(const char *const _services, services_foreach_funct_t funct, void *arg) {
+	if(_services == NULL) {
+		fprintf(stderr, "Internal error (#0)\n");
+		exit(-1);
+	}
+
+	char *services = strdup(_services);
+	char *strtok_saveptr = NULL;
+	char *service = strtok_r(services, " \t", &strtok_saveptr);
+	do {
+		funct(service, arg);
+	} while((service = strtok_r(NULL, " \t", &strtok_saveptr)));
+	free(services);
+
+	return 0;
+}
+
 static inline void lsb_x2x_add(char *key, char *data, struct hsearch_data *ht) {
 	ENTRY entry = {key, data}, *entry_res_ptr;
 //	printf("%s: %s\n", key, data);
@@ -52,11 +75,11 @@ static inline void lsb_x2x_add(char *key, char *data, struct hsearch_data *ht) {
 	hsearch_r(entry, ENTER, &entry_res_ptr, ht);
 }
 
-static inline void lsb_v2m_add(char *key, char *data) {
+void lsb_v2m_add(char *key, char *data) {
 	return lsb_x2x_add(key, data, &ht_lsb_v2m);
 }
 
-static inline void lsb_m2v_add(char *key, char *data) {
+void lsb_m2v_add(char *key, char *data) {
 	return lsb_x2x_add(key, data, &ht_lsb_m2v);
 }
 
@@ -107,13 +130,7 @@ void parse_insserv() {
 			// $macro:	service service service service
 			//			   services
 
-			// splitting services
-			char *strtok_saveptr = NULL;
-			char *service = strtok_r(services, " \t", &strtok_saveptr);
-			do {
-				// remembering: service => macro
-				lsb_v2m_add(service, macro);
-			} while((service = strtok_r(NULL, " \t", &strtok_saveptr)));
+			services_foreach(services, (services_foreach_funct_t)lsb_v2m_add, macro);
 		}
 	}
 
@@ -143,7 +160,7 @@ void lsb_init() {
 	parse_insserv();
 }
 
-static const char *lsb_x2x(const char *lsb_macro, struct hsearch_data *ht) {
+static const char *lsb_x2x(const char *const lsb_macro, struct hsearch_data *ht) {
 	ENTRY entry, *entry_ptr;
 
 	entry.key = (char *)lsb_macro;
@@ -155,17 +172,91 @@ static const char *lsb_x2x(const char *lsb_macro, struct hsearch_data *ht) {
 	return NULL;
 }
 
-static const char *lsb_m2v(const char *lsb_macro) {
+static const char *lsb_m2v(const char *const lsb_macro) {
 	return lsb_x2x(lsb_macro, &ht_lsb_m2v);
 }
 
-static const char *lsb_v2m(const char *lsb_macro) {
+static const char *lsb_v2m(const char *const lsb_macro) {
 	return lsb_x2x(lsb_macro, &ht_lsb_v2m);
+}
+
+#ifdef BUGFIX_DEBIAN_714039
+static inline int isall(const char *const services, char **ret) {
+	if(*services == 0) {
+		fprintf(stderr, "Internal error (#1)\n");
+		exit(-1);
+	}
+
+	int rc = 0;
+	*ret = xmalloc(BUFSIZ);
+	char *ptr = *ret, *ret_end = &(*ret[BUFSIZ]);
+
+	void isall_parse_service(const char *const service, void *arg) {
+		if(!strcmp(service, "*")) {
+			rc = 1;
+			return;
+		}
+
+		size_t service_len = strlen(service);
+		if(&ptr[service_len+2] > ret_end) {
+			fprintf(stderr, "Error: Services list line is too long: %s\n", services);
+			exit(EMSGSIZE);
+		}
+		memcpy(ptr, service, service_len);
+		ptr += service_len;
+		*(ptr++) = ' ';
+	}
+
+	services_foreach(services, isall_parse_service, NULL);
+
+	*(--ptr) = 0;
+
+	return rc;
+}
+#endif
+
+char *lsb_expand(char *services) {
+	char *ret = xmalloc(BUFSIZ);
+	char *ptr = ret, *ret_end = &ret[BUFSIZ];
+
+	void lsb_expand_parse_service(const char *service, void *arg) {
+		const char * const service_expanded = lsb_m2v(service);
+
+		if(service_expanded != NULL)
+			service = service_expanded;
+
+		size_t service_len = strlen(service);
+		if(&ptr[service_len+2] > ret_end) {
+			fprintf(stderr, "Error: Services list line is too long: %s\n", services);
+			exit(EMSGSIZE);
+		}
+		memcpy(ptr, service, service_len);
+		ptr += service_len;
+		*(ptr++) = ' ';
+	}
+
+	services_foreach(services, lsb_expand_parse_service, NULL);
+
+	*(--ptr) = 0;
+
+	return ret;
 }
 
 static void lsb_header_parse(const char *const header, char *value) {
 	printf("%s: %s\n", header, value);
+
+	if(!strcmp(header, "provides")) {
+	} else
+	if(!strcmp(header, "required-start")) {
+	}
+
 	return;
+}
+
+char *strtolower(char *_str) {
+	char *str = _str;
+	while(*str) *(str++) |= 0x20;
+	return _str;
 }
 
 void lsb_parse(const char *initdscript) {
@@ -179,9 +270,9 @@ void lsb_parse(const char *initdscript) {
 
 	regex_t regex_start, regex_header, regex_end;
 
-	xregcomp(&regex_start,  "^### BEGIN INIT INFO\\s*$",     REG_EXTENDED);
+	xregcomp(&regex_start,  "^### BEGIN INIT INFO\\s*$",        REG_EXTENDED);
 	xregcomp(&regex_header, "^#\\s*(\\S+):\\s\\s*(.*\\S)\\s*$", REG_EXTENDED);
-	xregcomp(&regex_end,    "^### END INIT INFO\\s*$",       REG_EXTENDED);
+	xregcomp(&regex_end,    "^### END INIT INFO\\s*$",          REG_EXTENDED);
 
 	enum lsb_parse_state {
 		LP_STARTED = 0,
@@ -216,7 +307,7 @@ void lsb_parse(const char *initdscript) {
 					char *value  = strdup(&line_ptr[matches[2].rm_so]);	// TODO: free() this
 					value[ matches[2].rm_eo - matches[2].rm_so] = 0;
 
-					lsb_header_parse(header, value);
+					lsb_header_parse(strtolower(header), value);
 
 					free(header);
 				} else

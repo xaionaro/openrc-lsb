@@ -10,10 +10,8 @@ CFLAGS ?= -march=native -pipe -O2 -std=gnu99
 CFLAGS += $(CSECFLAGS)
 DEBUGCFLAGS ?= -pipe -Wall -Werror -ggdb3 -Wno-error=unused-variable $(CSECFLAGS)
 
-LIBS := $(shell pkg-config --libs glib-2.0) -lpthread
 LDSECFLAGS ?= -Xlinker -zrelro
 LDFLAGS += $(LDSECFLAGS)
-INC := $(shell pkg-config --cflags glib-2.0) $(INC)
 
 INSTDIR = $(DESTDIR)$(PREFIX)
 

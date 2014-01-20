@@ -61,7 +61,7 @@ static inline int services_foreach(const char *const _services, services_foreach
 	do {
 		funct(service, arg);
 	} while((service = strtok_r(NULL, " \t", &strtok_saveptr)));
-	free(services);
+	//free(services);
 
 	return 0;
 }
@@ -132,16 +132,17 @@ void syntax() {
 
 static inline void lsb_x2x_add(char *key, char *data, struct hsearch_data *ht) {
 	ENTRY entry = {key, data}, *entry_res_ptr;
-//	printf("%s: %s\n", key, data);
 
 	hsearch_r(entry, ENTER, &entry_res_ptr, ht);
 }
 
 void lsb_v2m_add(char *key, char *data) {
+//	printf("lsb_v2m_add(): %s: %s\n", key, data);
 	return lsb_x2x_add(key, data, &ht_lsb_v2m);
 }
 
 void lsb_m2v_add(char *key, char *data) {
+//	printf("lsb_m2v_add(): %s: %s\n", key, data);
 	return lsb_x2x_add(key, data, &ht_lsb_m2v);
 }
 
@@ -185,19 +186,37 @@ void parse_insserv() {
 		if(!regexec(&regex, line_ptr, 3, matches, 0)) {
 			char *macro    = strdup(&line_ptr[matches[1].rm_so]);	// TODO: free() this
 			macro[   matches[1].rm_eo - matches[1].rm_so] = 0;
+			if(*macro == '$')
+				macro++;
 
 			char *services = strdup(&line_ptr[matches[2].rm_so]);	// TODO: free() this
 			services[matches[2].rm_eo - matches[2].rm_so] = 0;
 
-			// $macro:	service service service service
-			//			   services
+			// $macro:	+service +service +service +service
+			//			      services
 
-			void parse_insserv_service_add(char *service, void *macro) {
-				if(*service == '+') service++;
-				lsb_v2m_add(strdup(service), (char *)macro);
+			// removing "+"-s on start of every service
+
+			char *services_fixed = strdup(services);
+			char *ptr_s = services, *ptr_d = services_fixed;
+
+			while(*ptr_s) {
+				switch(*ptr_s) {
+					case '$':
+					case '+':
+						ptr_s++;
+						continue;
+					default:
+						*(ptr_d++) = *(ptr_s++);
+				}
 			}
+			*ptr_d = 0;
 
-			services_foreach(services, (services_foreach_funct_t)parse_insserv_service_add, macro);
+//			printf("%s: %s\n", macro, services_fixed);
+
+			lsb_m2v_add(macro, services_fixed);
+
+			services_foreach(services_fixed, (services_foreach_funct_t)lsb_v2m_add, macro);
 		}
 	}
 
@@ -205,29 +224,12 @@ void parse_insserv() {
 }
 
 void lsb_init() {
-	ENTRY entries[] = {
-		{"$all",	"*"},
-		{"$local_fs",	"mountall mountall-bootclean umountfs"},
-		{"$remote_fs",	"mountnfs mountnfs-bootclean umountnfs sendsigs"},
-		{"$network",	"networking ifupdown"},
-		{"$syslog",	"syslog"},
-		{"$time",	"hwclock"},
-		{"$portmap",	"rpcbind"},
-		{NULL,		NULL}
-	};
-
-	hcreate_r(6,		&ht_lsb_m2v);
+	hcreate_r(HT_SIZE_VSRV,	&ht_lsb_m2v);
 	hcreate_r(HT_SIZE_VSRV,	&ht_lsb_v2m);
 	hcreate_r(MAX_need,	&need_ht);
 	hcreate_r(MAX_use,	&use_ht);
 	hcreate_r(MAX_before,	&before_ht);
 	hcreate_r(MAX_provide,	&provide_ht);
-
-	ENTRY *entry_ptr = entries, *entry_res_ptr;
-	while(entry_ptr->key != NULL) {
-		hsearch_r(*entry_ptr, ENTER, &entry_res_ptr, &ht_lsb_m2v);
-		entry_ptr++;
-	}
 
 	parse_insserv();
 }
@@ -249,6 +251,7 @@ static const char *lsb_m2v(const char *const lsb_macro) {
 }
 
 static const char *lsb_v2m(const char *const lsb_macro) {
+//	printf("lsb_v2m(\"%s\")\n", lsb_macro);
 	return lsb_x2x(lsb_macro, &ht_lsb_v2m);
 }
 
@@ -294,10 +297,18 @@ char *lsb_expand(const char *const _services) {
 	char *services = strdup(_services);
 
 	void lsb_expand_parse_service(const char *service, void *arg) {
-		const char * const service_expanded = lsb_m2v(service);
+		switch(*service) {
+			case '$': {
+				const char * const service_expanded = lsb_m2v(&service[1]);
 
-		if(service_expanded != NULL)
-			service = service_expanded;
+				if(service_expanded == NULL)
+					return;
+
+				service = service_expanded;
+				break;
+			}
+
+		}
 
 		size_t service_len = strlen(service);
 		if(&ptr[service_len+2] > ret_end) {
@@ -318,16 +329,20 @@ char *lsb_expand(const char *const _services) {
 }
 
 void lsb_header_provide(const char *const service, void *arg) {
-	const char *const macro = lsb_v2m(service);
-//	printf("service: %s\n", service);
-	if(macro != NULL) {
-		char *services_expanded = lsb_expand(macro);
-		if(services_expanded != NULL);
-			PROVIDE(services_expanded);
+//	printf("lsb_header_provide(): service: %s\n", service);
+
+	{
+		const char *const macro = lsb_v2m(service);
+		if(macro != NULL) {
+			const char *services_expanded = lsb_m2v(macro);
+//			printf("--> %s\n", services_expanded);
+			if(services_expanded != NULL);
+				PROVIDE(services_expanded);
+		}
 	}
 
-	char *services_expanded = lsb_expand(service);
-	if(services_expanded != NULL);
+	const char *services_expanded = lsb_m2v(service);
+	if(services_expanded != NULL)
 		PROVIDE(services_expanded);
 
 	if(strcmp(service, service_me))

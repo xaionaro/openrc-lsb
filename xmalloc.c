@@ -21,7 +21,8 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 
 #include "malloc.h"
 
-void *xmalloc(size_t size) {
+void *xmalloc(size_t size)
+{
 #ifdef PARANOID
 	size++;	/* Just in case	*/
 #endif
@@ -39,7 +40,8 @@ void *xmalloc(size_t size) {
 	return ret;
 }
 
-void *xcalloc(size_t nmemb, size_t size) {
+void *xcalloc(size_t nmemb, size_t size)
+{
 #ifdef PARANOID
 	nmemb++; /* Just in case	*/
 	size++;	 /* Just in case	*/
@@ -56,7 +58,8 @@ void *xcalloc(size_t nmemb, size_t size) {
 	return ret;
 }
 
-void *xrealloc(void *oldptr, size_t size) {
+void *xrealloc(void *oldptr, size_t size)
+{
 #ifdef PARANOID
 	size++;	/* Just in case */
 #endif
@@ -70,3 +73,4 @@ void *xrealloc(void *oldptr, size_t size) {
 
 	return ret;
 }
+

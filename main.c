@@ -47,7 +47,8 @@ char *service_me;
 
 typedef void (*services_foreach_funct_t)(const char *const service, void *arg);
 
-static inline int services_foreach(const char *const _services, services_foreach_funct_t funct, void *arg) {
+static inline int services_foreach(const char *const _services, services_foreach_funct_t funct, void *arg)
+{
 	if(_services == NULL) {
 		fprintf(stderr, "Internal error (#0)\n");
 		exit(-1);
@@ -89,7 +90,8 @@ RELATION(provide);
 RELATION(before);
 
 
-void relation_add_oneservice(char *service, struct relation_arg *arg_p) {
+void relation_add_oneservice(char *service, struct relation_arg *arg_p)
+{
 	switch(*service) {
 		case '+': {
 			service++;
@@ -109,7 +111,8 @@ void relation_add_oneservice(char *service, struct relation_arg *arg_p) {
 	}
 }
 
-void relation_add(const char *const _service, struct relation_arg *arg_p) {
+void relation_add(const char *const _service, struct relation_arg *arg_p)
+{
 	if(!strcmp(_service, service_me)) {
 		return;
 	}
@@ -144,44 +147,54 @@ void relation_add(const char *const _service, struct relation_arg *arg_p) {
 	}
 }
 
-#define RELATION_ADD(_relation, _services) {\
+#define RELATION_ADD(_relation, _services)\
+{\
 	char *services = strdupa(_services);\
 	services_foreach(services, (services_foreach_funct_t)relation_add, &_relation ## _arg);\
 }
 
-static inline void NEED(const char *const _services) {
+static inline void NEED(const char *const _services)
+{
 	RELATION_ADD(need, _services);
 }
-static inline void USE(const char *const _services) {
+static inline void USE(const char *const _services)
+{
 	RELATION_ADD(use, _services);
 }
-static inline void PROVIDE(const char *const _services) {
+static inline void PROVIDE(const char *const _services)
+{
 	RELATION_ADD(provide, _services);
 }
-static inline void BEFORE(const char *const _services) {
+static inline void BEFORE(const char *const _services)
+{
 	RELATION_ADD(before, _services);
 }
 
-void syntax() {
+void syntax()
+{
 	fprintf(stderr, "lsb2rcconf /path/to/init/script\n");
 	exit(EINVAL);
 }
 
-static inline void lsb_x2x_add(char *key, char *data, struct hsearch_data *ht) {
+static inline void lsb_x2x_add(char *key, char *data, struct hsearch_data *ht)
+{
 	ENTRY entry = {key, data}, *entry_res_ptr;
 
 	hsearch_r(entry, ENTER, &entry_res_ptr, ht);
 }
 
-void lsb_s2v_add(char *key, char *data) {
+void lsb_s2v_add(char *key, char *data)
+{
 	return lsb_x2x_add(key, data, &ht_lsb_s2v);
 }
 
-void lsb_v2s_add(char *key, char *data) {
+void lsb_v2s_add(char *key, char *data)
+{
 	return lsb_x2x_add(key, data, &ht_lsb_v2s);
 }
 
-static const int xregcomp(regex_t *preg, const char *regex, int cflags) {
+static const int xregcomp(regex_t *preg, const char *regex, int cflags)
+{
 	int r;
 	if((r=regcomp(preg, regex, cflags))) {
 		char buf[BUFSIZ];
@@ -193,7 +206,8 @@ static const int xregcomp(regex_t *preg, const char *regex, int cflags) {
 	return r;
 }
 
-void parse_insserv() {
+void parse_insserv()
+{
 	FILE *file_insserv = fopen(PATH_INSSERV, "r");
 	if(file_insserv == NULL) {
 		fprintf(stderr, "Error: Unable to read \""PATH_INSSERV"\": %i: %s\n", errno, strerror(errno));
@@ -268,7 +282,8 @@ void parse_insserv() {
 	fclose(file_insserv);
 }
 
-void lsb_init() {
+void lsb_init()
+{
 	/* Hardcoded: */
 	ENTRY entries_v2s[] = {
 		{"all",		"*"},
@@ -306,7 +321,8 @@ void lsb_init() {
 	parse_insserv();
 }
 
-static inline const char *lsb_x2x(const char *const lsb_virtual, struct hsearch_data *ht) {
+static inline const char *lsb_x2x(const char *const lsb_virtual, struct hsearch_data *ht)
+{
 	ENTRY entry, *entry_ptr;
 
 	entry.key = (char *)lsb_virtual;
@@ -318,17 +334,20 @@ static inline const char *lsb_x2x(const char *const lsb_virtual, struct hsearch_
 	return NULL;
 }
 
-const char *lsb_v2s(const char *const lsb_virtual) {
+const char *lsb_v2s(const char *const lsb_virtual)
+{
 	return lsb_x2x(lsb_virtual, &ht_lsb_v2s);
 }
 
 #if 0
-const char *lsb_s2v(const char *const lsb_virtual) {
+const char *lsb_s2v(const char *const lsb_virtual)
+{
 	return lsb_x2x(lsb_virtual, &ht_lsb_s2v);
 }
 #endif
 
-char *lsb_expand(const char *const _services) {
+char *lsb_expand(const char *const _services)
+{
 	char *ret = xmalloc(BUFSIZ);
 	char *ptr = ret, *ret_end = &ret[BUFSIZ];
 
@@ -366,7 +385,8 @@ char *lsb_expand(const char *const _services) {
 	return ret;
 }
 
-static void lsb_header_parse(const char *const header, char *value) {
+static void lsb_header_parse(const char *const header, char *value)
+{
 	if(!strcmp(header, "provides")) {
 		PROVIDE(value);
 	} else
@@ -399,13 +419,15 @@ static void lsb_header_parse(const char *const header, char *value) {
 	return;
 }
 
-char *strtolower(char *_str) {
+char *strtolower(char *_str)
+{
 	char *str = _str;
 	while(*str) *(str++) |= 0x20;
 	return _str;
 }
 
-void lsb_parse(const char *initdscript) {
+void lsb_parse(const char *initdscript)
+{
 	FILE *file_initdscript = fopen(initdscript, "r");
 
 	if(file_initdscript == NULL) {
@@ -470,7 +492,8 @@ l_lsb_parse_end:
 	return;
 }
 
-static inline void print_relation(char **relation) {
+static inline void print_relation(char **relation)
+{
 	char **ptr = relation;
 	while(*ptr != NULL) {
 		printf(" %s", *ptr);
@@ -480,7 +503,8 @@ static inline void print_relation(char **relation) {
 	return;
 }
 
-void lsb_print_orc() {
+void lsb_print_orc()
+{
 	if(description != NULL)
 		printf("description=\"%s\"\n\n", description);
 
@@ -512,7 +536,8 @@ void lsb_print_orc() {
 	return;
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[])
+{
 	if(argc <= 1)
 		syntax();
 

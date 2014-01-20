@@ -5,9 +5,10 @@ COMPRESS_MAN ?= yes
 STRIP_BINARY ?= yes
 #EXAMPLES ?= yes
 
+STDFLAG ?= -D_GNU_SOURCE
 CSECFLAGS ?= -fstack-protector-all -Wall --param ssp-buffer-size=4 -D_FORTIFY_SOURCE=2 -fstack-check -DPARANOID
-CFLAGS ?= -march=native -pipe -O2 -std=gnu99
-CFLAGS += $(CSECFLAGS)
+CFLAGS ?= -march=native -pipe -O2 -std=gnu99 
+CFLAGS += $(CSECFLAGS) $(STDFLAG)
 DEBUGCFLAGS ?= -pipe -Wall -Werror -ggdb3 -Wno-error=unused-variable $(CSECFLAGS)
 
 LDSECFLAGS ?= -Xlinker -zrelro

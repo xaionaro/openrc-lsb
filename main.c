@@ -16,8 +16,13 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 
 /* If you have any question, I'll recommend you to ask irc.freenode.net#openrc */
 
+//#define _GNU_SOURCE	/* hsearch_r()	*/
 
-#define _GNU_SOURCE	/* hsearch_r()	*/
+#ifdef _GNU_SOURCE
+#define hsearch_data_t struct hsearch_data
+#else
+#define _POSIX_C_SOURCE 200809L
+#endif
 
 #include <stdio.h>	/* fprintf()	*/
 #include <stdlib.h>	/* exit()	*/
@@ -31,6 +36,47 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 
 #include "xmalloc.h"
 
+#ifndef _GNU_SOURCE
+#warning no hsearch_r() implementation available, using tsearch() instead. Compile with -D_GNU_SOURCE, please.
+/* hsearch_r() fallbacks to tsearch() :( */
+
+#define hsearch_data_t void *
+
+#define hsearch_r(...) hsearch_r_2_tsearch(__VA_ARGS__)
+static inline int hsearch_r_2_tsearch(ENTRY item, ACTION action, ENTRY **retval, hsearch_data_t *htab) {
+	int hsearch_r_2_tsearch_compare(const ENTRY *a, const ENTRY *b) {
+		return strcmp(a->key, b->key);
+	}
+
+	ENTRY **tret = NULL;
+
+	switch(action) {
+		case FIND: {
+			tret = tfind  (&item,      htab, (int (*)(const void *, const void *))hsearch_r_2_tsearch_compare);
+			break;
+		}
+		case ENTER: {
+			ENTRY *item_dup_p = xmalloc(sizeof(item));
+			item_dup_p->key  = strdup(item.key);
+			item_dup_p->data = item.data;
+			tret = tsearch(item_dup_p, htab, (int (*)(const void *, const void *))hsearch_r_2_tsearch_compare);
+			break;
+		}
+	}
+
+	if(tret == NULL) {
+		*retval = NULL;
+		return 0;
+	}
+	*retval = *tret;
+
+	return 0;
+}
+
+#define hcreate_r(...) {}
+
+#endif
+
 extern const char *lsb_v2s(const char *const lsb_virtual);
 
 #define PATH_INSSERV	"/etc/insserv.conf"
@@ -38,9 +84,9 @@ extern const char *lsb_v2s(const char *const lsb_virtual);
 #define HT_SIZE_VSRV	(1<<8)
 
 /* virtual to value */
-struct hsearch_data ht_lsb_v2s = {0};
+hsearch_data_t ht_lsb_v2s = {0};
 /* value to virtual */
-struct hsearch_data ht_lsb_s2v = {0};
+hsearch_data_t ht_lsb_s2v = {0};
 
 char *description  = NULL;
 char *service_me;
@@ -74,13 +120,13 @@ struct relation_arg {
 	char 			**relation;
 	int  			 *relation_count_p;
 	int			  relation_max;
-	struct hsearch_data 	 *relation_ht_p;
+	hsearch_data_t 		 *relation_ht_p;
 };
 
 #define RELATION(relation_name)\
 	char 			*relation_name[MAX_ ## relation_name + 1] = {NULL};\
-	int			 relation_name ## _count 	= 0;\
-	struct hsearch_data	 relation_name ## _ht		={0};\
+	int			 relation_name ## _count 	=  0;\
+	hsearch_data_t	 	 relation_name ## _ht		= {0};\
 	struct relation_arg	 relation_name ## _arg 		= \
 		{relation_name, &relation_name ## _count, MAX_ ## relation_name, &relation_name ##_ht};
 
@@ -104,7 +150,6 @@ void relation_add_oneservice(char *service, struct relation_arg *arg_p)
 			if(entry_res_ptr != NULL)
 				return;
 
-			
 			arg_p->relation[(*arg_p->relation_count_p)++] = service;
 			hsearch_r(entry, ENTER, &entry_res_ptr, arg_p->relation_ht_p);
 		}
@@ -149,8 +194,9 @@ void relation_add(const char *const _service, struct relation_arg *arg_p)
 
 #define RELATION_ADD(_relation, _services)\
 {\
-	char *services = strdupa(_services);\
+	char *services = strdup(_services);\
 	services_foreach(services, (services_foreach_funct_t)relation_add, &_relation ## _arg);\
+	free(services);\
 }
 
 static inline void NEED(const char *const _services)
@@ -176,7 +222,7 @@ void syntax()
 	exit(EINVAL);
 }
 
-static inline void lsb_x2x_add(char *key, char *data, struct hsearch_data *ht)
+static inline void lsb_x2x_add(char *key, char *data, hsearch_data_t *ht)
 {
 	ENTRY entry = {key, data}, *entry_res_ptr;
 
@@ -321,7 +367,7 @@ void lsb_init()
 	parse_insserv();
 }
 
-static inline const char *lsb_x2x(const char *const lsb_virtual, struct hsearch_data *ht)
+static inline const char *lsb_x2x(const char *const lsb_virtual, hsearch_data_t *ht)
 {
 	ENTRY entry, *entry_ptr;
 

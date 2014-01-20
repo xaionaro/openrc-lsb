@@ -35,11 +35,11 @@ clean:
 distclean: clean
 
 install:
-	install -d "$(INSTDIR)/lib" "$(INSTDIR)/share/man/man1"
+	install -d "$(INSTDIR)/lib/rc/bin" "$(INSTDIR)/share/man/man1"
 ifeq ($(STRIP_BINARY),yes)
 	strip --strip-unneeded -R .comment -R .GCC.command.line -R .note.gnu.gold-version $(binary)
 endif
-	install -m 755 $(binary) "$(INSTDIR)"/lib/rc/
+	install -m 755 $(binary) "$(INSTDIR)"/lib/rc/bin
 #	install -m 644 man/man1/lsb2rcconf.1 "$(INSTDIR)"/share/man/man1/
 #ifeq ($(COMPRESS_MAN),yes)
 #	rm -f "$(INSTDIR)"/share/man/man1/lsb2rcconf.1.gz

@@ -14,7 +14,7 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 
  */
 
-// This program is reimplementation of lsp.pl
+// This program is reimplementation of lsb.pl
 
 
 #define _GNU_SOURCE	// hsearch_r()

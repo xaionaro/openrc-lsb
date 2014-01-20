@@ -288,7 +288,7 @@ char *lsb_expand(const char *const _services) {
 
 void lsb_header_provide(const char *const service, void *arg) {
 	const char *const macro = lsb_v2m(service);
-	printf("service: %s\n", service);
+//	printf("service: %s\n", service);
 	if(macro != NULL) {
 		char *services_expanded = lsb_expand(macro);
 		if(services_expanded != NULL);
@@ -447,6 +447,7 @@ static inline void print_relation(char **relation) {
 }
 
 void lsb_print_orc() {
+//	printf("service: %s\n", service_me);
 
 	if(description != NULL)
 		printf("description=\"%s\"\n\n", description);

@@ -75,7 +75,7 @@ static inline int hsearch_r_2_tsearch(ENTRY item, ACTION action, ENTRY **retval,
 
 #define hcreate_r(...) {}
 
-#endif
+#endif /* ifndef _GNU_SOURCE */
 
 extern const char *lsb_v2s(const char *const lsb_virtual);
 

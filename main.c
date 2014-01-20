@@ -20,8 +20,6 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 
 #ifdef _GNU_SOURCE
 #define hsearch_data_t struct hsearch_data
-#else
-#define _POSIX_C_SOURCE 200809L
 #endif
 
 #include <stdio.h>	/* fprintf()	*/

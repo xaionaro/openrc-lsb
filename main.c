@@ -14,6 +14,9 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 
  */
 
+// This program is reimplementation of lsp.pl
+
+
 #define _GNU_SOURCE	// hsearch_r()
 
 #include <stdio.h>	// fprintf()

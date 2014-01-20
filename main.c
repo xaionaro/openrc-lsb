@@ -206,6 +206,7 @@ void parse_insserv() {
 
 void lsb_init() {
 	ENTRY entries[] = {
+		{"$all",	"*"},
 		{"$local_fs",	"mountall mountall-bootclean umountfs"},
 		{"$remote_fs",	"mountnfs mountnfs-bootclean umountnfs sendsigs"},
 		{"$network",	"networking ifupdown"},

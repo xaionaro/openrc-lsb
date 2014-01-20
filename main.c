@@ -77,14 +77,6 @@ static inline int services_foreach(const char *const _services, services_foreach
 #define MAX_provide	MAX_need
 #define MAX_before	MAX_need
 
-char    *need[MAX_need+1]    = {NULL};
-char     *use[MAX_use+1]     = {NULL};
-char *provide[MAX_provide+1] = {NULL};
-char  *before[MAX_before+1]  = {NULL};
-
-int need_count=0, use_count=0, provide_count=0, before_count=0;
-struct hsearch_data need_ht={0}, use_ht={0}, provide_ht={0}, before_ht={0};
-
 struct relation_arg {
 	char 			**relation;
 	int  			 *relation_count_p;
@@ -92,10 +84,25 @@ struct relation_arg {
 	struct hsearch_data 	 *relation_ht_p;
 };
 
+#define RELATION(relation_name)\
+	char 			*relation_name[MAX_ ## relation_name + 1] = {NULL};\
+	int			 relation_name ## _count 	= 0;\
+	struct hsearch_data	 relation_name ## _ht		={0};\
+	struct relation_arg	 relation_name ## _arg 		= \
+		{relation_name, &relation_name ## _count, MAX_ ## relation_name, &relation_name ##_ht};
+
+RELATION(need);
+RELATION(use);
+RELATION(provide);
+RELATION(before);
+
+
 void relation_add_oneservice(char *service, struct relation_arg *arg_p) {
 	switch(*service) {
 		case '+': {
 			service++;
+			if(arg_p->relation == need)	// Moving optional services from need to use
+				arg_p = &use_arg;
 		}
 		default: {
 			ENTRY entry = {service, NULL}, *entry_res_ptr;
@@ -145,27 +152,22 @@ void relation_add(const char *const _service, struct relation_arg *arg_p) {
 	}
 }
 
-#define RELATION(_relation, _services) {\
+#define RELATION_ADD(_relation, _services) {\
 	char *services = strdupa(_services);\
-	struct relation_arg arg;\
-	arg.relation		=  _relation;\
-	arg.relation_count_p	= &_relation ## _count;\
-	arg.relation_ht_p	= &_relation ## _ht;\
-	arg.relation_max	= MAX ## _ ## _relation;\
-	services_foreach(services, (services_foreach_funct_t)relation_add, &arg);\
+	services_foreach(services, (services_foreach_funct_t)relation_add, &_relation ## _arg);\
 }
 
 static inline void NEED(const char *const _services) {
-	RELATION(need, _services);
+	RELATION_ADD(need, _services);
 }
 static inline void USE(const char *const _services) {
-	RELATION(use, _services);
+	RELATION_ADD(use, _services);
 }
 static inline void PROVIDE(const char *const _services) {
-	RELATION(provide, _services);
+	RELATION_ADD(provide, _services);
 }
 static inline void BEFORE(const char *const _services) {
-	RELATION(before, _services);
+	RELATION_ADD(before, _services);
 }
 
 void syntax() {
@@ -562,8 +564,14 @@ void lsb_print_orc() {
 
 	printf("%s", "depend () {\n");
 
+	if(*provide != NULL) {
+		printf("%s", "\tprovide");
+		print_relation(provide);
+		printf("\n");
+	} else
+		printf("\tprovide %s\n", service_me);
 	if(*use != NULL) {
-		printf("%s", "\tuse ");
+		printf("%s", "\tuse");
 		print_relation(use);
 		printf("\n");
 	}
@@ -575,11 +583,6 @@ void lsb_print_orc() {
 	if(*before != NULL) {
 		printf("%s", "\tbefore");
 		print_relation(before);
-		printf("\n");
-	}
-	if(*provide != NULL) {
-		printf("%s", "\tprovide");
-		print_relation(provide);
 		printf("\n");
 	}
 	printf("}\n");

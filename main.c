@@ -166,7 +166,12 @@ void parse_insserv() {
 			// $macro:	service service service service
 			//			   services
 
-			services_foreach(services, (services_foreach_funct_t)lsb_v2m_add, macro);
+			void parse_insserv_service_add(char *service, void *macro) {
+				if(*service == '+') service++;
+				lsb_v2m_add(strdup(service), (char *)macro);
+			}
+
+			services_foreach(services, (services_foreach_funct_t)parse_insserv_service_add, macro);
 		}
 	}
 
@@ -283,6 +288,7 @@ char *lsb_expand(const char *const _services) {
 
 void lsb_header_provide(const char *const service, void *arg) {
 	const char *const macro = lsb_v2m(service);
+	printf("service: %s\n", service);
 	if(macro != NULL) {
 		char *services_expanded = lsb_expand(macro);
 		if(services_expanded != NULL);

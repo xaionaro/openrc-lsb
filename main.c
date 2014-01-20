@@ -31,6 +31,8 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 
 #include "xmalloc.h"
 
+extern const char *lsb_v2s(const char *const lsb_virtual);
+
 #define PATH_INSSERV "/etc/insserv.conf"
 
 #define HT_SIZE_VSRV	(1<<8)
@@ -43,10 +45,10 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 // should be removed, when the bug will be fixed
 #define BUGFIX_DEBIAN_714039
 
-// macro to value
-struct hsearch_data ht_lsb_m2v = {0};
-// value to macro
-struct hsearch_data ht_lsb_v2m = {0};
+// virtual to value
+struct hsearch_data ht_lsb_v2s = {0};
+// value to virtual
+struct hsearch_data ht_lsb_s2v = {0};
 
 char *description  = NULL;
 char *service_me;
@@ -90,8 +92,30 @@ struct relation_arg {
 	struct hsearch_data 	 *relation_ht_p;
 };
 
+void relation_add_oneservice(char *service, struct relation_arg *arg_p) {
+	switch(*service) {
+		case '+': {
+			service++;
+		}
+		default: {
+			ENTRY entry = {service, NULL}, *entry_res_ptr;
+			hsearch_r(entry, FIND, &entry_res_ptr, arg_p->relation_ht_p);
+			if(entry_res_ptr != NULL)
+				return;
+
+			
+			arg_p->relation[(*arg_p->relation_count_p)++] = service;
+			hsearch_r(entry, ENTER, &entry_res_ptr, arg_p->relation_ht_p);
+		}
+	}
+}
+
 void relation_add(const char *const _service, struct relation_arg *arg_p) {
-	char *service = strdup(_service);
+	if(!strcmp(_service, service_me)) {
+		return;
+	}
+
+	char *service_buf = strdup(_service), *service = service_buf;
 
 	if(*arg_p->relation_count_p >= arg_p->relation_max) {
 		fprintf(stderr, "Too many records.\n");
@@ -102,12 +126,27 @@ void relation_add(const char *const _service, struct relation_arg *arg_p) {
 	hsearch_r(entry, FIND, &entry_res_ptr, arg_p->relation_ht_p);
 
 	if(entry_res_ptr == NULL) {
-		hsearch_r(entry, ENTER, &entry_res_ptr, arg_p->relation_ht_p);
-		arg_p->relation[(*arg_p->relation_count_p)++] = service;
+		switch(*service) {
+			case '$': {
+				service++;
+				const char *const services = lsb_v2s(service);
+				if(services != NULL) {
+					void relation_add_mark_real_service(char *service, void *arg) {
+						relation_add_oneservice(service, arg_p);
+					}
+					services_foreach(services, (services_foreach_funct_t)relation_add_mark_real_service, NULL);
+				}
+				break;
+			}
+			default: {
+				relation_add_oneservice(service, arg_p);
+			}
+		}
 	}
 }
 
-#define RELATION(_relation, service) {\
+#define RELATION(_relation, _services) {\
+	char *services = strdupa(_services);\
 	struct relation_arg arg;\
 	arg.relation		=  _relation;\
 	arg.relation_count_p	= &_relation ## _count;\
@@ -116,17 +155,17 @@ void relation_add(const char *const _service, struct relation_arg *arg_p) {
 	services_foreach(services, (services_foreach_funct_t)relation_add, &arg);\
 }
 
-static inline void NEED(const char *const services) {
-	RELATION(need, services);
+static inline void NEED(const char *const _services) {
+	RELATION(need, _services);
 }
-static inline void USE(const char *const services) {
-	RELATION(use, services);
+static inline void USE(const char *const _services) {
+	RELATION(use, _services);
 }
-static inline void PROVIDE(const char *const services) {
-	RELATION(provide, services);
+static inline void PROVIDE(const char *const _services) {
+	RELATION(provide, _services);
 }
-static inline void BEFORE(const char *const services) {
-	RELATION(before, services);
+static inline void BEFORE(const char *const _services) {
+	RELATION(before, _services);
 }
 
 void syntax() {
@@ -140,12 +179,12 @@ static inline void lsb_x2x_add(char *key, char *data, struct hsearch_data *ht) {
 	hsearch_r(entry, ENTER, &entry_res_ptr, ht);
 }
 
-void lsb_v2m_add(char *key, char *data) {
-	return lsb_x2x_add(key, data, &ht_lsb_v2m);
+void lsb_s2v_add(char *key, char *data) {
+	return lsb_x2x_add(key, data, &ht_lsb_s2v);
 }
 
-void lsb_m2v_add(char *key, char *data) {
-	return lsb_x2x_add(key, data, &ht_lsb_m2v);
+void lsb_v2s_add(char *key, char *data) {
+	return lsb_x2x_add(key, data, &ht_lsb_v2s);
 }
 
 static const int xregcomp(regex_t *preg, const char *regex, int cflags) {
@@ -186,37 +225,49 @@ void parse_insserv() {
 		line_ptr[--line_len] = 0;	// cutting-off '\n'
 
 		if(!regexec(&regex, line_ptr, 3, matches, 0)) {
-			char *macro    = strdup(&line_ptr[matches[1].rm_so]);	// TODO: free() this
-			macro[   matches[1].rm_eo - matches[1].rm_so] = 0;
-			if(*macro == '$')
-				macro++;
+			char *virtual    = strdup(&line_ptr[matches[1].rm_so]);	// TODO: free() this
+			virtual[ matches[1].rm_eo - matches[1].rm_so] = 0;
+			if(*virtual == '$')
+				virtual++;
 
 			char *services = strdup(&line_ptr[matches[2].rm_so]);	// TODO: free() this
 			services[matches[2].rm_eo - matches[2].rm_so] = 0;
 
-			// $macro:	+service +service +service +service
+			// $virtual:	+service +service +service +service
 			//			      services
 
-			// removing "+"-s on start of every service
+			char services_unrolled[BUFSIZ], *services_unrolled_ptr = services_unrolled, *services_unrolled_end = &services_unrolled[BUFSIZ];
 
-			char *services_fixed = strdup(services);
-			char *ptr_s = services, *ptr_d = services_fixed;
-
-			while(*ptr_s) {
-				switch(*ptr_s) {
+			void parse_insserv_parse_service(char *service, void *arg) {
+				const char *services;
+				switch(*service) {
 					case '$':
-					case '+':
-						ptr_s++;
-						continue;
+						service++;
+						services = lsb_v2s(service);
+						break;
 					default:
-						*(ptr_d++) = *(ptr_s++);
+						services = service;
+						break;
 				}
+				if(services == NULL)
+					return;
+
+				size_t len = strlen(services);
+
+				if(&services_unrolled_ptr[len] >= services_unrolled_end) {
+					fprintf(stderr, "Error: Too long field value.\n");
+					exit(EOVERFLOW);
+				}
+
+				memcpy(services_unrolled_ptr, services, len);
+				services_unrolled_ptr = &services_unrolled_ptr[len];
+				*(services_unrolled_ptr++) = ' ';
 			}
-			*ptr_d = 0;
 
-			lsb_m2v_add(macro, services_fixed);
+			services_foreach(services, (services_foreach_funct_t)parse_insserv_parse_service, NULL);
+			*(--services_unrolled_ptr) = 0;
 
-			services_foreach(services_fixed, (services_foreach_funct_t)lsb_v2m_add, macro);
+			lsb_v2s_add(virtual, strdup(services_unrolled));
 		}
 	}
 
@@ -224,20 +275,47 @@ void parse_insserv() {
 }
 
 void lsb_init() {
-	hcreate_r(HT_SIZE_VSRV,	&ht_lsb_m2v);
-	hcreate_r(HT_SIZE_VSRV,	&ht_lsb_v2m);
+	// Hardcoded:
+	ENTRY entries_v2s[] = {
+		{"all",		"*"},
+		{NULL,		NULL},
+	};
+	ENTRY entries_s2v[] = {
+		{"*",		"all"},
+		{NULL,		NULL},
+	};
+
+
+	// Initialization:
+	hcreate_r(HT_SIZE_VSRV,	&ht_lsb_v2s);
+	hcreate_r(HT_SIZE_VSRV,	&ht_lsb_s2v);
 	hcreate_r(MAX_need,	&need_ht);
 	hcreate_r(MAX_use,	&use_ht);
 	hcreate_r(MAX_before,	&before_ht);
 	hcreate_r(MAX_provide,	&provide_ht);
 
+	ENTRY *entry_ptr, *entry_res_ptr;
+
+	// Remembering hardcoded values:
+	entry_ptr = entries_v2s;
+	while(entry_ptr->key != NULL) {
+		hsearch_r(*entry_ptr, ENTER, &entry_res_ptr, &ht_lsb_v2s);
+		entry_ptr++;
+	}
+	entry_ptr = entries_s2v;
+	while(entry_ptr->key != NULL) {
+		hsearch_r(*entry_ptr, ENTER, &entry_res_ptr, &ht_lsb_s2v);
+		entry_ptr++;
+	}
+
+	// Parse /etc/insserv.conf
 	parse_insserv();
 }
 
-static const char *lsb_x2x(const char *const lsb_macro, struct hsearch_data *ht) {
+static inline const char *lsb_x2x(const char *const lsb_virtual, struct hsearch_data *ht) {
 	ENTRY entry, *entry_ptr;
 
-	entry.key = (char *)lsb_macro;
+	entry.key = (char *)lsb_virtual;
 
 	hsearch_r(entry, FIND, &entry_ptr, ht);
 	if(entry_ptr != NULL)
@@ -246,13 +324,13 @@ static const char *lsb_x2x(const char *const lsb_macro, struct hsearch_data *ht)
 	return NULL;
 }
 
-static const char *lsb_m2v(const char *const lsb_macro) {
-	return lsb_x2x(lsb_macro, &ht_lsb_m2v);
+const char *lsb_v2s(const char *const lsb_virtual) {
+	return lsb_x2x(lsb_virtual, &ht_lsb_v2s);
 }
 
 #ifdef LSB_PARSER_EXPAND_VIA_VIRTUAL
-static const char *lsb_v2m(const char *const lsb_macro) {
-	return lsb_x2x(lsb_macro, &ht_lsb_v2m);
+const char *lsb_s2v(const char *const lsb_virtual) {
+	return lsb_x2x(lsb_virtual, &ht_lsb_s2v);
 }
 #endif
 
@@ -300,7 +378,7 @@ char *lsb_expand(const char *const _services) {
 	void lsb_expand_parse_service(const char *service, void *arg) {
 		switch(*service) {
 			case '$': {
-				const char * const service_expanded = lsb_m2v(&service[1]);
+				const char * const service_expanded = lsb_v2s(&service[1]);
 
 				if(service_expanded == NULL)
 					return;
@@ -330,24 +408,25 @@ char *lsb_expand(const char *const _services) {
 }
 
 void lsb_header_provide(const char *const service, void *arg) {
-#ifdef LSB_PARSER_EXPAND_VIA_VIRTUAL
+/*
 	{
-		const char *const macro = lsb_v2m(service);
-		if(macro != NULL) {
-			const char *services_expanded = lsb_m2v(macro);
+		const char *const virtual = lsb_s2v(service);
+		if(virtual != NULL) {
+			const char *services_expanded = lsb_v2s(virtual);
 //			printf("--> %s\n", services_expanded);
 			if(services_expanded != NULL);
 				PROVIDE(services_expanded);
 		}
 	}
-#endif
+*/
 
-	const char *services_expanded = lsb_m2v(service);
+	PROVIDE(service);
+
+/*
+	const char *services_expanded = lsb_v2s(service);
 	if(services_expanded != NULL)
 		PROVIDE(services_expanded);
-
-	if(strcmp(service, service_me))
-		PROVIDE(strdup(service));
+*/
 
 	return;
 }
@@ -357,19 +436,17 @@ static void lsb_header_parse(const char *const header, char *value) {
 		services_foreach(value, lsb_header_provide, NULL);
 	} else
 	if(!strcmp(header, "required-start")) {
-		char *services_expanded = lsb_expand(value);
 #ifdef BUGFIX_DEBIAN_714039
 		char *services_fixed;
 		if(isall(value, &services_fixed)) {
 			NEED(services_fixed);
 			USE("*");
-			free(services_expanded);
 		} else {
 #endif
-			NEED(services_expanded);
+			NEED(value);
 #ifdef BUGFIX_DEBIAN_714039
-			free(services_fixed);
 		}
+		free(services_fixed);
 #endif
 	} else
 /*	if(!strcmp(header, "required-stop")) {
@@ -384,16 +461,12 @@ static void lsb_header_parse(const char *const header, char *value) {
 /*	if(!strcmp(header, "description")) {
 	} else*/
 	if(!strcmp(header, "should-start")) {
-		char *services_expanded = lsb_expand(value);
-		if(services_expanded != NULL)
-			USE(services_expanded);
+		USE(value);
 	} else
 /*	if(!strcmp(header, "should-stop")) {
 	} else*/
 	if(!strcmp(header, "x-start-before")) {
-		char *services_expanded = lsb_expand(value);
-		if(services_expanded != NULL)
-			BEFORE(services_expanded);
+		BEFORE(value);
 	} else
 /*	if(!strcmp(header, "x-stop-after")) {
 	} else*/

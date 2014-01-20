@@ -37,14 +37,6 @@ extern const char *lsb_v2s(const char *const lsb_virtual);
 
 #define HT_SIZE_VSRV	(1<<8)
 
-// Expand services via virtual.
-// For example: mountall -> $local_fs -> mountall mountall-bootclean mountoverflowtmp umountfs
-//#define LSB_PARSER_EXPAND_VIA_VIRTUAL
-
-// http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=714039
-// should be removed, when the bug will be fixed
-#define BUGFIX_DEBIAN_714039
-
 // virtual to value
 struct hsearch_data ht_lsb_v2s = {0};
 // value to virtual
@@ -330,44 +322,9 @@ const char *lsb_v2s(const char *const lsb_virtual) {
 	return lsb_x2x(lsb_virtual, &ht_lsb_v2s);
 }
 
-#ifdef LSB_PARSER_EXPAND_VIA_VIRTUAL
+#if 0
 const char *lsb_s2v(const char *const lsb_virtual) {
 	return lsb_x2x(lsb_virtual, &ht_lsb_s2v);
-}
-#endif
-
-#ifdef BUGFIX_DEBIAN_714039
-static inline int isall(const char *const services, char **ret) {
-	if(*services == 0) {
-		fprintf(stderr, "Internal error (#1)\n");
-		exit(-1);
-	}
-
-	int rc = 0;
-	*ret = xmalloc(BUFSIZ);
-	char *ptr = *ret, *ret_end = &(*ret)[BUFSIZ];
-
-	void isall_parse_service(const char *const service, void *arg) {
-		if(!strcmp(service, "*")) {
-			rc = 1;
-			return;
-		}
-
-		size_t service_len = strlen(service);
-		if(&ptr[service_len+2] > ret_end) {
-			fprintf(stderr, "Error: Services list line is too long: %s\n", services);
-			exit(EMSGSIZE);
-		}
-		memcpy(ptr, service, service_len);
-		ptr += service_len;
-		*(ptr++) = ' ';
-	}
-
-	services_foreach(services, isall_parse_service, NULL);
-
-	*(--ptr) = 0;
-
-	return rc;
 }
 #endif
 
@@ -409,47 +366,12 @@ char *lsb_expand(const char *const _services) {
 	return ret;
 }
 
-void lsb_header_provide(const char *const service, void *arg) {
-/*
-	{
-		const char *const virtual = lsb_s2v(service);
-		if(virtual != NULL) {
-			const char *services_expanded = lsb_v2s(virtual);
-//			printf("--> %s\n", services_expanded);
-			if(services_expanded != NULL);
-				PROVIDE(services_expanded);
-		}
-	}
-*/
-
-	PROVIDE(service);
-
-/*
-	const char *services_expanded = lsb_v2s(service);
-	if(services_expanded != NULL)
-		PROVIDE(services_expanded);
-*/
-
-	return;
-}
-
 static void lsb_header_parse(const char *const header, char *value) {
 	if(!strcmp(header, "provides")) {
-		services_foreach(value, lsb_header_provide, NULL);
+		PROVIDE(value);
 	} else
 	if(!strcmp(header, "required-start")) {
-#ifdef BUGFIX_DEBIAN_714039
-		char *services_fixed;
-		if(isall(value, &services_fixed)) {
-			NEED(services_fixed);
-			USE("*");
-		} else {
-#endif
-			NEED(value);
-#ifdef BUGFIX_DEBIAN_714039
-		}
-		free(services_fixed);
-#endif
+		NEED(value);
 	} else
 /*	if(!strcmp(header, "required-stop")) {
 	} else

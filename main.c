@@ -14,32 +14,32 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 
  */
 
-// If you have any question, I'll recommend you to ask irc.freenode.net#openrc
+/* If you have any question, I'll recommend you to ask irc.freenode.net#openrc */
 
 
-#define _GNU_SOURCE	// hsearch_r()
+#define _GNU_SOURCE	/* hsearch_r()	*/
 
-#include <stdio.h>	// fprintf()
-#include <stdlib.h>	// exit()
-#include <string.h>	// strcmp()
-#include <errno.h>	// ENVAL
-#include <libgen.h>	// basename()
-#include <search.h>	// hsearch_r()
-#include <sys/types.h>	// regexec()
-#include <regex.h>	// regexec()
-#include <unistd.h>	// access()
+#include <stdio.h>	/* fprintf()	*/
+#include <stdlib.h>	/* exit()	*/
+#include <string.h>	/* strcmp()	*/
+#include <errno.h>	/* ENVAL	*/
+#include <libgen.h>	/* basename()	*/
+#include <search.h>	/* hsearch_r()	*/
+#include <sys/types.h>	/* regexec()	*/
+#include <regex.h>	/* regexec()	*/
+#include <unistd.h>	/* access()	*/
 
 #include "xmalloc.h"
 
 extern const char *lsb_v2s(const char *const lsb_virtual);
 
-#define PATH_INSSERV "/etc/insserv.conf"
+#define PATH_INSSERV	"/etc/insserv.conf"
 
 #define HT_SIZE_VSRV	(1<<8)
 
-// virtual to value
+/* virtual to value */
 struct hsearch_data ht_lsb_v2s = {0};
-// value to virtual
+/* value to virtual */
 struct hsearch_data ht_lsb_s2v = {0};
 
 char *description  = NULL;
@@ -59,7 +59,7 @@ static inline int services_foreach(const char *const _services, services_foreach
 	do {
 		funct(service, arg);
 	} while((service = strtok_r(NULL, " \t", &strtok_saveptr)));
-	//free(services);
+	/* free(services); */
 
 	return 0;
 }
@@ -93,7 +93,7 @@ void relation_add_oneservice(char *service, struct relation_arg *arg_p) {
 	switch(*service) {
 		case '+': {
 			service++;
-			if(arg_p->relation == need)	// Moving optional services from need to use
+			if(arg_p->relation == need)	/* Moving optional services from need to use */
 				arg_p = &use_arg;
 		}
 		default: {
@@ -216,19 +216,19 @@ void parse_insserv() {
 		if(*line_ptr == '#')
 			continue;
 
-		line_ptr[--line_len] = 0;	// cutting-off '\n'
+		line_ptr[--line_len] = 0;	/* cutting-off '\n' */
 
 		if(!regexec(&regex, line_ptr, 3, matches, 0)) {
-			char *virtual    = strdup(&line_ptr[matches[1].rm_so]);	// TODO: free() this
+			char *virtual    = strdup(&line_ptr[matches[1].rm_so]);	/* TODO: free() this */
 			virtual[ matches[1].rm_eo - matches[1].rm_so] = 0;
 			if(*virtual == '$')
 				virtual++;
 
-			char *services = strdup(&line_ptr[matches[2].rm_so]);	// TODO: free() this
+			char *services = strdup(&line_ptr[matches[2].rm_so]);	/* TODO: free() this */
 			services[matches[2].rm_eo - matches[2].rm_so] = 0;
 
-			// $virtual:	+service +service +service +service
-			//			      services
+			/* $virtual:	+service +service +service +service	*/
+			/*			      services			*/
 
 			char services_unrolled[BUFSIZ], *services_unrolled_ptr = services_unrolled, *services_unrolled_end = &services_unrolled[BUFSIZ];
 
@@ -269,7 +269,7 @@ void parse_insserv() {
 }
 
 void lsb_init() {
-	// Hardcoded:
+	/* Hardcoded: */
 	ENTRY entries_v2s[] = {
 		{"all",		"*"},
 		{NULL,		NULL},
@@ -280,7 +280,7 @@ void lsb_init() {
 	};
 
 
-	// Initialization:
+	/* Initialization: */
 	hcreate_r(HT_SIZE_VSRV,	&ht_lsb_v2s);
 	hcreate_r(HT_SIZE_VSRV,	&ht_lsb_s2v);
 	hcreate_r(MAX_need,	&need_ht);
@@ -290,7 +290,7 @@ void lsb_init() {
 
 	ENTRY *entry_ptr, *entry_res_ptr;
 
-	// Remembering hardcoded values:
+	/* Remembering hardcoded values: */
 	entry_ptr = entries_v2s;
 	while(entry_ptr->key != NULL) {
 		hsearch_r(*entry_ptr, ENTER, &entry_res_ptr, &ht_lsb_v2s);
@@ -302,7 +302,7 @@ void lsb_init() {
 		entry_ptr++;
 	}
 
-	// Parse /etc/insserv.conf
+	/* Parse /etc/insserv.conf */
 	parse_insserv();
 }
 
@@ -433,7 +433,7 @@ void lsb_parse(const char *initdscript) {
 		if(!line_len)
 			continue;
 
-		line_ptr[--line_len] = 0;	// cutting-off '\n'
+		line_ptr[--line_len] = 0;	/* cutting-off '\n' */
 
 		switch(state) {
 			case LP_STARTED: {
@@ -450,7 +450,7 @@ void lsb_parse(const char *initdscript) {
 					char *header = strdup(&line_ptr[matches[1].rm_so]);
 					header[matches[1].rm_eo - matches[1].rm_so] = 0;
 
-					char *value  = strdup(&line_ptr[matches[2].rm_so]);	// TODO: free() this
+					char *value  = strdup(&line_ptr[matches[2].rm_so]);	/* TODO: free() this */
 					value[ matches[2].rm_eo - matches[2].rm_so] = 0;
 
 					lsb_header_parse(strtolower(header), value);

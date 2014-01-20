@@ -14,16 +14,16 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 
  */
 
-#include <stdio.h>	// fprintf()
-#include <stdlib.h>	// size_t
-#include <string.h>	// strerror()
-#include <errno.h>	// errno
+#include <stdio.h>	/* fprintf()	*/
+#include <stdlib.h>	/* size_t	*/
+#include <string.h>	/* strerror()	*/
+#include <errno.h>	/* errno	*/
 
 #include "malloc.h"
 
 void *xmalloc(size_t size) {
 #ifdef PARANOID
-	size++;	// Just in case
+	size++;	/* Just in case	*/
 #endif
 
 	void *ret = malloc(size);
@@ -41,8 +41,8 @@ void *xmalloc(size_t size) {
 
 void *xcalloc(size_t nmemb, size_t size) {
 #ifdef PARANOID
-	nmemb++; // Just in case
-	size++;	 // Just in case
+	nmemb++; /* Just in case	*/
+	size++;	 /* Just in case	*/
 #endif
 
 	void *ret = calloc(nmemb, size);
@@ -52,13 +52,13 @@ void *xcalloc(size_t nmemb, size_t size) {
 		exit(errno);
 	}
 
-//	memset(ret, 0, nmemb*size);	// Just in case
+/*	memset(ret, 0, nmemb*size);	/ * Just in case */
 	return ret;
 }
 
 void *xrealloc(void *oldptr, size_t size) {
 #ifdef PARANOID
-	size++;	// Just in case
+	size++;	/* Just in case */
 #endif
 
 	void *ret = realloc(oldptr, size);

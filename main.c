@@ -44,7 +44,8 @@ struct hsearch_data ht_lsb_m2v = {0};
 // value to macro
 struct hsearch_data ht_lsb_v2m = {0};
 
-char *description = NULL;
+char *description  = NULL;
+char *service_me;
 
 #define MAX_need	(1<<16)
 #define MAX_use		MAX_need
@@ -250,9 +251,11 @@ static inline int isall(const char *const services, char **ret) {
 }
 #endif
 
-char *lsb_expand(char *services) {
+char *lsb_expand(const char *const _services) {
 	char *ret = xmalloc(BUFSIZ);
 	char *ptr = ret, *ret_end = &ret[BUFSIZ];
+
+	char *services = strdup(_services);
 
 	void lsb_expand_parse_service(const char *service, void *arg) {
 		const char * const service_expanded = lsb_m2v(service);
@@ -274,10 +277,24 @@ char *lsb_expand(char *services) {
 
 	*(--ptr) = 0;
 
+	free(services);
 	return ret;
 }
 
 void lsb_header_provide(const char *const service, void *arg) {
+	const char *const macro = lsb_v2m(service);
+	if(macro != NULL) {
+		char *services_expanded = lsb_expand(macro);
+		if(services_expanded != NULL);
+			PROVIDE(services_expanded);
+	}
+
+	char *services_expanded = lsb_expand(service);
+	if(services_expanded != NULL);
+		PROVIDE(services_expanded);
+
+	if(strcmp(service, service_me))
+		PROVIDE(strdup(service));
 
 	return;
 }
@@ -321,7 +338,8 @@ static void lsb_header_parse(const char *const header, char *value) {
 */
 	if(!strcmp(header, "should-start")) {
 		char *services_expanded = lsb_expand(value);
-		USE(services_expanded);
+		if(services_expanded != NULL)
+			USE(services_expanded);
 	} else
 /*
 	if(!strcmp(header, "should-stop")) {
@@ -329,7 +347,8 @@ static void lsb_header_parse(const char *const header, char *value) {
 */
 	if(!strcmp(header, "x-start-before")) {
 		char *services_expanded = lsb_expand(value);
-		BEFORE(services_expanded);
+		if(services_expanded != NULL)
+			BEFORE(services_expanded);
 	} else
 /*
 	if(!strcmp(header, "x-stop-after")) {
@@ -424,8 +443,8 @@ static inline void print_relation(char **relation) {
 void lsb_print_orc() {
 
 	if(description != NULL)
-		printf("%s\n", description);
-	printf("%s", "depend() {\n\tuse");
+		printf("description=\"%s\"\n\n", description);
+	printf("%s", "depend () {\n\tuse");
 	print_relation(use);
 	printf("%s", "\n\tneed");
 	print_relation(need);
@@ -443,7 +462,7 @@ int main(int argc, char *argv[]) {
 		syntax();
 
 	const char *initdscript = argv[1];
-//	const char *service	= basename(strdup(initdscript));
+	service_me		= basename(strdup(initdscript));
 
 	if(access(initdscript, R_OK)) {
 		fprintf(stderr, "Cannot get read access to file \"%s\": %i: %s\n",

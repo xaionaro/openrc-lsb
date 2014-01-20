@@ -47,44 +47,6 @@ struct hsearch_data ht_lsb_v2m = {0};
 char *description  = NULL;
 char *service_me;
 
-#define MAX_need	(1<<16)
-#define MAX_use		MAX_need
-#define MAX_provide	MAX_need
-#define MAX_before	MAX_need
-
-char    *need[MAX_need+1]    = {NULL};
-char     *use[MAX_use+1]     = {NULL};
-char *provide[MAX_provide+1] = {NULL};
-char  *before[MAX_before+1]  = {NULL};
-
-int need_count=0, use_count=0, provide_count=0, before_count=0;
-
-#define RELATION(relation, service) {\
-	if(relation ## _count >= MAX_ ## relation) {\
-		fprintf(stderr, "Too many records.\n");\
-		exit(EOVERFLOW);\
-	}\
-	relation[relation ## _count++] = service;\
-}
-
-static inline void NEED(char *const service) {
-	RELATION(need, service);
-}
-static inline void USE(char *const service) {
-	RELATION(use, service);
-}
-static inline void PROVIDE(char *const service) {
-	RELATION(provide, service);
-}
-static inline void BEFORE(char *const service) {
-	RELATION(before, service);
-}
-
-void syntax() {
-	fprintf(stderr, "lsb2rcconf /path/to/init/script\n");
-	exit(EINVAL);
-}
-
 typedef void (*services_foreach_funct_t)(const char *const service, void *arg);
 
 static inline int services_foreach(const char *const _services, services_foreach_funct_t funct, void *arg) {
@@ -102,6 +64,70 @@ static inline int services_foreach(const char *const _services, services_foreach
 	free(services);
 
 	return 0;
+}
+
+#define MAX_need	(1<<16)
+#define MAX_use		MAX_need
+#define MAX_provide	MAX_need
+#define MAX_before	MAX_need
+
+char    *need[MAX_need+1]    = {NULL};
+char     *use[MAX_use+1]     = {NULL};
+char *provide[MAX_provide+1] = {NULL};
+char  *before[MAX_before+1]  = {NULL};
+
+int need_count=0, use_count=0, provide_count=0, before_count=0;
+struct hsearch_data need_ht={0}, use_ht={0}, provide_ht={0}, before_ht={0};
+
+struct relation_arg {
+	char 			**relation;
+	int  			 *relation_count_p;
+	int			  relation_max;
+	struct hsearch_data 	 *relation_ht_p;
+};
+
+void relation_add(const char *const _service, struct relation_arg *arg_p) {
+	char *service = strdup(_service);
+
+	if(*arg_p->relation_count_p >= arg_p->relation_max) {
+		fprintf(stderr, "Too many records.\n");
+		exit(EOVERFLOW);
+	}
+	ENTRY entry = {service, NULL}, *entry_res_ptr;
+
+	hsearch_r(entry, FIND, &entry_res_ptr, arg_p->relation_ht_p);
+
+	if(entry_res_ptr == NULL) {
+		hsearch_r(entry, ENTER, &entry_res_ptr, arg_p->relation_ht_p);
+		arg_p->relation[(*arg_p->relation_count_p)++] = service;
+	}
+}
+
+#define RELATION(_relation, service) {\
+	struct relation_arg arg;\
+	arg.relation		=  _relation;\
+	arg.relation_count_p	= &_relation ## _count;\
+	arg.relation_ht_p	= &_relation ## _ht;\
+	arg.relation_max	= MAX ## _ ## _relation;\
+	services_foreach(services, (services_foreach_funct_t)relation_add, &arg);\
+}
+
+static inline void NEED(const char *const services) {
+	RELATION(need, services);
+}
+static inline void USE(const char *const services) {
+	RELATION(use, services);
+}
+static inline void PROVIDE(const char *const services) {
+	RELATION(provide, services);
+}
+static inline void BEFORE(const char *const services) {
+	RELATION(before, services);
+}
+
+void syntax() {
+	fprintf(stderr, "lsb2rcconf /path/to/init/script\n");
+	exit(EINVAL);
 }
 
 static inline void lsb_x2x_add(char *key, char *data, struct hsearch_data *ht) {
@@ -191,6 +217,10 @@ void lsb_init() {
 
 	hcreate_r(6,		&ht_lsb_m2v);
 	hcreate_r(HT_SIZE_VSRV,	&ht_lsb_v2m);
+	hcreate_r(MAX_need,	&need_ht);
+	hcreate_r(MAX_use,	&use_ht);
+	hcreate_r(MAX_before,	&before_ht);
+	hcreate_r(MAX_provide,	&provide_ht);
 
 	ENTRY *entry_ptr = entries, *entry_res_ptr;
 	while(entry_ptr->key != NULL) {

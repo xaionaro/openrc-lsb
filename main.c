@@ -444,15 +444,30 @@ void lsb_print_orc() {
 
 	if(description != NULL)
 		printf("description=\"%s\"\n\n", description);
-	printf("%s", "depend () {\n\tuse");
-	print_relation(use);
-	printf("%s", "\n\tneed");
-	print_relation(need);
-	printf("%s", "\n\tbefore");
-	print_relation(before);
-	printf("%s", "\n\tprovide");
-	print_relation(provide);
-	printf("\n}\n");
+
+	printf("%s", "depend () {\n");
+
+	if(*use != NULL) {
+		printf("%s", "\tuse ");
+		print_relation(use);
+		printf("\n");
+	}
+	if(*need != NULL) {
+		printf("%s", "\tneed");
+		print_relation(need);
+		printf("\n");
+	}
+	if(*before != NULL) {
+		printf("%s", "\tbefore");
+		print_relation(before);
+		printf("\n");
+	}
+	if(*provide != NULL) {
+		printf("%s", "\tprovide");
+		print_relation(provide);
+		printf("\n");
+	}
+	printf("}\n");
 
 	return;
 }

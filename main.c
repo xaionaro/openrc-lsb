@@ -35,6 +35,10 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 
 #define HT_SIZE_VSRV	(1<<8)
 
+// Expand services via virtual.
+// For example: mountall -> $local_fs -> mountall mountall-bootclean mountoverflowtmp umountfs
+//#define LSB_PARSER_EXPAND_VIA_VIRTUAL
+
 // http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=714039
 // should be removed, when the bug will be fixed
 #define BUGFIX_DEBIAN_714039
@@ -137,12 +141,10 @@ static inline void lsb_x2x_add(char *key, char *data, struct hsearch_data *ht) {
 }
 
 void lsb_v2m_add(char *key, char *data) {
-//	printf("lsb_v2m_add(): %s: %s\n", key, data);
 	return lsb_x2x_add(key, data, &ht_lsb_v2m);
 }
 
 void lsb_m2v_add(char *key, char *data) {
-//	printf("lsb_m2v_add(): %s: %s\n", key, data);
 	return lsb_x2x_add(key, data, &ht_lsb_m2v);
 }
 
@@ -212,8 +214,6 @@ void parse_insserv() {
 			}
 			*ptr_d = 0;
 
-//			printf("%s: %s\n", macro, services_fixed);
-
 			lsb_m2v_add(macro, services_fixed);
 
 			services_foreach(services_fixed, (services_foreach_funct_t)lsb_v2m_add, macro);
@@ -250,10 +250,11 @@ static const char *lsb_m2v(const char *const lsb_macro) {
 	return lsb_x2x(lsb_macro, &ht_lsb_m2v);
 }
 
+#ifdef LSB_PARSER_EXPAND_VIA_VIRTUAL
 static const char *lsb_v2m(const char *const lsb_macro) {
-//	printf("lsb_v2m(\"%s\")\n", lsb_macro);
 	return lsb_x2x(lsb_macro, &ht_lsb_v2m);
 }
+#endif
 
 #ifdef BUGFIX_DEBIAN_714039
 static inline int isall(const char *const services, char **ret) {
@@ -329,8 +330,7 @@ char *lsb_expand(const char *const _services) {
 }
 
 void lsb_header_provide(const char *const service, void *arg) {
-//	printf("lsb_header_provide(): service: %s\n", service);
-
+#ifdef LSB_PARSER_EXPAND_VIA_VIRTUAL
 	{
 		const char *const macro = lsb_v2m(service);
 		if(macro != NULL) {
@@ -340,6 +340,7 @@ void lsb_header_provide(const char *const service, void *arg) {
 				PROVIDE(services_expanded);
 		}
 	}
+#endif
 
 	const char *services_expanded = lsb_m2v(service);
 	if(services_expanded != NULL)
@@ -352,8 +353,6 @@ void lsb_header_provide(const char *const service, void *arg) {
 }
 
 static void lsb_header_parse(const char *const header, char *value) {
-//	printf("%s: %s\n", header, value);
-
 	if(!strcmp(header, "provides")) {
 		services_foreach(value, lsb_header_provide, NULL);
 	} else
@@ -373,39 +372,31 @@ static void lsb_header_parse(const char *const header, char *value) {
 		}
 #endif
 	} else
-/*
-	if(!strcmp(header, "required-stop")) {
+/*	if(!strcmp(header, "required-stop")) {
 	} else
 	if(!strcmp(header, "default-start")) {
 	} else
 	if(!strcmp(header, "default-stop")) {
-	} else
-*/
+	} else*/
 	if(!strcmp(header, "short-description")) {
 		description = value;
 	} else
-/*
-	if(!strcmp(header, "description")) {
-	} else
-*/
+/*	if(!strcmp(header, "description")) {
+	} else*/
 	if(!strcmp(header, "should-start")) {
 		char *services_expanded = lsb_expand(value);
 		if(services_expanded != NULL)
 			USE(services_expanded);
 	} else
-/*
-	if(!strcmp(header, "should-stop")) {
-	} else
-*/
+/*	if(!strcmp(header, "should-stop")) {
+	} else*/
 	if(!strcmp(header, "x-start-before")) {
 		char *services_expanded = lsb_expand(value);
 		if(services_expanded != NULL)
 			BEFORE(services_expanded);
 	} else
-/*
-	if(!strcmp(header, "x-stop-after")) {
-	} else
-*/
+/*	if(!strcmp(header, "x-stop-after")) {
+	} else*/
 	{}
 
 	return;
@@ -493,8 +484,6 @@ static inline void print_relation(char **relation) {
 }
 
 void lsb_print_orc() {
-//	printf("service: %s\n", service_me);
-
 	if(description != NULL)
 		printf("description=\"%s\"\n\n", description);
 

@@ -14,7 +14,7 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 
  */
 
-// This program is reimplementation of lsb.pl
+// If you have any question, I'll recommend you to ask irc.freenode.net#openrc
 
 
 #define _GNU_SOURCE	// hsearch_r()

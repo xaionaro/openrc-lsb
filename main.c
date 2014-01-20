@@ -16,7 +16,11 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 
 /* If you have any question, I'll recommend you to ask irc.freenode.net#openrc */
 
-//#define _GNU_SOURCE	/* hsearch_r()	*/
+
+
+/* === includes === */
+
+/* #define _GNU_SOURCE	/ * hsearch_r()	*/
 
 #ifdef _GNU_SOURCE
 #define hsearch_data_t struct hsearch_data
@@ -33,6 +37,10 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 #include <unistd.h>	/* access()	*/
 
 #include "xmalloc.h"
+
+
+
+/* === portability === */
 
 #ifndef _GNU_SOURCE
 #warning no hsearch_r() implementation available, using tsearch() instead. Compile with -D_GNU_SOURCE, please.
@@ -74,6 +82,10 @@ static inline int hsearch_r_2_tsearch(ENTRY item, ACTION action, ENTRY **retval,
 #define hcreate_r(...) {}
 
 #endif /* ifndef _GNU_SOURCE */
+
+
+
+/* === code self === */
 
 extern const char *lsb_v2s(const char *const lsb_virtual);
 

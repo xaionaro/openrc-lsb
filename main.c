@@ -79,7 +79,10 @@ static inline int hsearch_r_2_tsearch(ENTRY item, ACTION action, ENTRY **retval,
 	return 0;
 }
 
-#define hcreate_r(...) {}
+#define hcreate_r(...) hcreate_r_2_nop(__VA_ARGS__)
+static inline int hcreate_r_2_nop(size_t nel, struct hsearch_data *htab) {
+	return 1;
+}
 
 #endif /* ifndef _GNU_SOURCE */
 

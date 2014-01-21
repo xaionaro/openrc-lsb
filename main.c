@@ -342,7 +342,7 @@ void lsb_init()
 {
 	/* Hardcoded: */
 	ENTRY entries_v2s[] = {
-		{"all",		"*"},
+		{"all",		"+*"},
 		{NULL,		NULL},
 	};
 	ENTRY entries_s2v[] = {

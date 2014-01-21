@@ -155,6 +155,17 @@ void relation_add_oneservice(char *service, struct relation_arg *arg_p)
 				arg_p = &use_arg;
 		}
 		default: {
+			if(*(arg_p->relation_count_p))
+				if(!memcmp(arg_p->relation[0], "*", 2))
+					return;
+
+			if(!strcmp(service, "*")) {
+				arg_p->relation[0] = strdup("*");
+				arg_p->relation[1] = NULL;
+				*(arg_p->relation_count_p) = 1;
+				return;
+			}
+
 			ENTRY entry = {service, NULL}, *entry_res_ptr;
 			hsearch_r(entry, FIND, &entry_res_ptr, arg_p->relation_ht_p);
 			if(entry_res_ptr != NULL)

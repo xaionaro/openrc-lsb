@@ -40,7 +40,7 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 
 
 
-/* === portability === */
+/* === portability hacks === */
 
 #ifndef _GNU_SOURCE
 #warning no hsearch_r() implementation available, using tsearch() instead. Compile with -D_GNU_SOURCE, please.

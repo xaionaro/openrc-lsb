@@ -80,7 +80,7 @@ static inline int hsearch_r_2_tsearch(ENTRY item, ACTION action, ENTRY **retval,
 }
 
 #define hcreate_r(...) hcreate_r_2_nop(__VA_ARGS__)
-static inline int hcreate_r_2_nop(size_t nel, struct hsearch_data *htab) {
+static inline int hcreate_r_2_nop(size_t nel, hsearch_data_t *htab) {
 	return 1;
 }
 

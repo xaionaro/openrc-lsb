@@ -74,3 +74,14 @@ void *xrealloc(void *oldptr, size_t size)
 	return ret;
 }
 
+char *xstrdup(const char *s) {
+	char *ret = strdup(s);
+
+	if(ret == NULL) {
+		fprintf(stderr, "xstrdup(%p): Cannot duplicate string (#%i: %s).\n", s, errno, strerror(errno));
+		exit(errno);
+	}
+
+	return ret;
+}
+

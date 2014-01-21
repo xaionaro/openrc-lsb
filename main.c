@@ -63,7 +63,7 @@ static inline int hsearch_r_2_tsearch(ENTRY item, ACTION action, ENTRY **retval,
 		}
 		case ENTER: {
 			ENTRY *item_dup_p = xmalloc(sizeof(item));
-			item_dup_p->key  = strdup(item.key);
+			item_dup_p->key  = xstrdup(item.key);
 			item_dup_p->data = item.data;
 			tret = tsearch(item_dup_p, htab, (int (*)(const void *, const void *))hsearch_r_2_tsearch_compare);
 			break;
@@ -110,7 +110,7 @@ static inline int services_foreach(const char *const _services, services_foreach
 		exit(-1);
 	}
 
-	char *services = strdup(_services);
+	char *services = xstrdup(_services);
 	char *strtok_saveptr = NULL;
 	char *service = strtok_r(services, " \t", &strtok_saveptr);
 	do {
@@ -160,7 +160,7 @@ void relation_add_oneservice(char *service, struct relation_arg *arg_p)
 					return;
 
 			if(!strcmp(service, "*")) {
-				arg_p->relation[0] = strdup("*");
+				arg_p->relation[0] = xstrdup("*");
 				arg_p->relation[1] = NULL;
 				*(arg_p->relation_count_p) = 1;
 				return;
@@ -183,7 +183,7 @@ void relation_add(const char *const _service, struct relation_arg *arg_p)
 		return;
 	}
 
-	char *service_buf = strdup(_service), *service = service_buf;
+	char *service_buf = xstrdup(_service), *service = service_buf;
 
 	if(*arg_p->relation_count_p >= arg_p->relation_max) {
 		fprintf(stderr, "Too many records.\n");
@@ -215,7 +215,7 @@ void relation_add(const char *const _service, struct relation_arg *arg_p)
 
 #define RELATION_ADD(_relation, _services)\
 {\
-	char *services = strdup(_services);\
+	char *services = xstrdup(_services);\
 	services_foreach(services, (services_foreach_funct_t)relation_add, &_relation ## _arg);\
 	free(services);\
 }
@@ -300,12 +300,12 @@ void parse_insserv()
 		line_ptr[--line_len] = 0;	/* cutting-off '\n' */
 
 		if(!regexec(&regex, line_ptr, 3, matches, 0)) {
-			char *virtual    = strdup(&line_ptr[matches[1].rm_so]);	/* TODO: free() this */
+			char *virtual    = xstrdup(&line_ptr[matches[1].rm_so]);	/* TODO: free() this */
 			virtual[ matches[1].rm_eo - matches[1].rm_so] = 0;
 			if(*virtual == '$')
 				virtual++;
 
-			char *services = strdup(&line_ptr[matches[2].rm_so]);	/* TODO: free() this */
+			char *services = xstrdup(&line_ptr[matches[2].rm_so]);	/* TODO: free() this */
 			services[matches[2].rm_eo - matches[2].rm_so] = 0;
 
 			/* $virtual:	+service +service +service +service	*/
@@ -342,7 +342,7 @@ void parse_insserv()
 			services_foreach(services, (services_foreach_funct_t)parse_insserv_parse_service, NULL);
 			*(--services_unrolled_ptr) = 0;
 
-			lsb_v2s_add(virtual, strdup(services_unrolled));
+			lsb_v2s_add(virtual, xstrdup(services_unrolled));
 		}
 	}
 
@@ -418,7 +418,7 @@ char *lsb_expand(const char *const _services)
 	char *ret = xmalloc(BUFSIZ);
 	char *ptr = ret, *ret_end = &ret[BUFSIZ];
 
-	char *services = strdup(_services);
+	char *services = xstrdup(_services);
 
 	void lsb_expand_parse_service(const char *service, void *arg) {
 		switch(*service) {
@@ -536,10 +536,10 @@ void lsb_parse(const char *initdscript)
 				regmatch_t matches[4] = {{0}};
 
 				if(!regexec(&regex_header, line_ptr, 3, matches, 0)) {
-					char *header = strdup(&line_ptr[matches[1].rm_so]);
+					char *header = xstrdup(&line_ptr[matches[1].rm_so]);
 					header[matches[1].rm_eo - matches[1].rm_so] = 0;
 
-					char *value  = strdup(&line_ptr[matches[2].rm_so]);	/* TODO: free() this */
+					char *value  = xstrdup(&line_ptr[matches[2].rm_so]);	/* TODO: free() this */
 					value[ matches[2].rm_eo - matches[2].rm_so] = 0;
 
 					lsb_header_parse(strtolower(header), value);
@@ -609,7 +609,7 @@ int main(int argc, char *argv[])
 		syntax();
 
 	const char *initdscript = argv[1];
-	service_me		= basename(strdup(initdscript));
+	service_me		= basename(xstrdup(initdscript));
 
 	if(access(initdscript, R_OK)) {
 		fprintf(stderr, "Cannot get read access to file \"%s\": %i: %s\n",

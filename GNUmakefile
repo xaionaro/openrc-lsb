@@ -30,7 +30,7 @@ all: configuration.h $(objs)
 	$(CC) $(CFLAGS) $(INC) $< -c -o $@
 
 clean:
-	rm -f $(binary) $(objs)
+	rm -f $(binary) $(objs) configuration.h
 
 configuration.h:
 	./configure

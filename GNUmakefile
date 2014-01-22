@@ -38,7 +38,7 @@ configuration.h:
 distclean: clean
 
 test:
-	./tests/run.sh
+	sh tests/run.sh
 
 install:
 	install -d "$(INSTDIR)/lib/rc/bin" "$(INSTDIR)/share/man/man1"

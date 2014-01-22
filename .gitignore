@@ -1,2 +1,3 @@
 *.o
 lsb2rcconf
+configuration.h

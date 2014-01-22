@@ -49,9 +49,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <regex.h>	/* regexec()	*/
 #include <unistd.h>	/* access()	*/
 
+#include "configuration.h"
 #include "xmalloc.h"
-
-
 
 /* === portability hacks === */
 
@@ -69,7 +68,7 @@ static inline int hsearch_r_2_tsearch(ENTRY item, ACTION action, ENTRY **retval,
 
 	ENTRY **tret = NULL;
 
-	switch(action) {
+	switch (action) {
 		case FIND: {
 			tret = tfind  (&item,      htab, (int (*)(const void *, const void *))hsearch_r_2_tsearch_compare);
 			break;
@@ -83,7 +82,7 @@ static inline int hsearch_r_2_tsearch(ENTRY item, ACTION action, ENTRY **retval,
 		}
 	}
 
-	if(tret == NULL) {
+	if (tret == NULL) {
 		*retval = NULL;
 		return 0;
 	}
@@ -128,7 +127,7 @@ typedef void (*services_foreach_funct_t)(const char *const service, void *arg);
 
 static inline int services_foreach(const char *const _services, services_foreach_funct_t funct, void *arg)
 {
-	if(_services == NULL) {
+	if (_services == NULL) {
 		fprintf(stderr, "Internal error (#0)\n");
 		exit(-1);
 	}
@@ -138,7 +137,7 @@ static inline int services_foreach(const char *const _services, services_foreach
 	char *service = strtok_r(services, " \t", &strtok_saveptr);
 	do {
 		funct(service, arg);
-	} while((service = strtok_r(NULL, " \t", &strtok_saveptr)));
+	} while ((service = strtok_r(NULL, " \t", &strtok_saveptr)));
 	/* free(services); */
 
 	return 0;
@@ -171,18 +170,18 @@ RELATION(before);
 
 void relation_add_oneservice(char *service, struct relation_arg *arg_p)
 {
-	switch(*service) {
+	switch (*service) {
 		case '+': {
 			service++;
-			if(arg_p->relation == need)	/* Moving optional services from need to use */
+			if (arg_p->relation == need)	/* Moving optional services from need to use */
 				arg_p = &use_arg;
 		}
 		default: {
-			if(*(arg_p->relation_count_p))
-				if(!memcmp(arg_p->relation[0], "*", 2))
+			if (*(arg_p->relation_count_p))
+				if (!memcmp(arg_p->relation[0], "*", 2))
 					return;
 
-			if(!strcmp(service, "*")) {
+			if (!strcmp(service, "*")) {
 				arg_p->relation[0] = xstrdup("*");
 				arg_p->relation[1] = NULL;
 				*(arg_p->relation_count_p) = 1;
@@ -191,7 +190,7 @@ void relation_add_oneservice(char *service, struct relation_arg *arg_p)
 
 			ENTRY entry = {service, NULL}, *entry_res_ptr;
 			hsearch_r(entry, FIND, &entry_res_ptr, arg_p->relation_ht_p);
-			if(entry_res_ptr != NULL)
+			if (entry_res_ptr != NULL)
 				return;
 
 			arg_p->relation[(*arg_p->relation_count_p)++] = service;
@@ -202,13 +201,13 @@ void relation_add_oneservice(char *service, struct relation_arg *arg_p)
 
 void relation_add(const char *const _service, struct relation_arg *arg_p)
 {
-	if(!strcmp(_service, service_me)) {
+	if (!strcmp(_service, service_me)) {
 		return;
 	}
 
 	char *service_buf = xstrdup(_service), *service = service_buf;
 
-	if(*arg_p->relation_count_p >= arg_p->relation_max) {
+	if (*arg_p->relation_count_p >= arg_p->relation_max) {
 		fprintf(stderr, "Too many records.\n");
 		exit(EOVERFLOW);
 	}
@@ -216,12 +215,12 @@ void relation_add(const char *const _service, struct relation_arg *arg_p)
 
 	hsearch_r(entry, FIND, &entry_res_ptr, arg_p->relation_ht_p);
 
-	if(entry_res_ptr == NULL) {
-		switch(*service) {
+	if (entry_res_ptr == NULL) {
+		switch (*service) {
 			case '$': {
 				service++;
 				const char *const services = lsb_v2s(service);
-				if(services != NULL) {
+				if (services != NULL) {
 					void relation_add_mark_real_service(char *service, void *arg) {
 						relation_add_oneservice(service, arg_p);
 					}
@@ -286,7 +285,7 @@ void lsb_v2s_add(char *key, char *data)
 static const int xregcomp(regex_t *preg, const char *regex, int cflags)
 {
 	int r;
-	if((r=regcomp(preg, regex, cflags))) {
+	if ((r=regcomp(preg, regex, cflags))) {
 		char buf[BUFSIZ];
 		regerror(r, preg, buf, BUFSIZ);
 		fprintf(stderr, "Error: Cannot compile regex: %i: %s\n", r, buf);
@@ -299,7 +298,7 @@ static const int xregcomp(regex_t *preg, const char *regex, int cflags)
 void parse_insserv()
 {
 	FILE *file_insserv = fopen(PATH_INSSERV, "r");
-	if(file_insserv == NULL) {
+	if (file_insserv == NULL) {
 		fprintf(stderr, "Error: Unable to read \""PATH_INSSERV"\": %i: %s\n", errno, strerror(errno));
 		exit(errno);
 	}
@@ -311,21 +310,21 @@ void parse_insserv()
 	size_t line_len;
 	size_t line_size = 0;
 	char *line_ptr = NULL;
-	while((line_len = getline(&line_ptr, &line_size, file_insserv))!=-1) {
+	while ((line_len = getline(&line_ptr, &line_size, file_insserv))!=-1) {
 		regmatch_t matches[4] = {{0}};
 
-		if(!line_len)
+		if (!line_len)
 			continue;
 
-		if(*line_ptr == '#')
+		if (*line_ptr == '#')
 			continue;
 
 		line_ptr[--line_len] = 0;	/* cutting-off '\n' */
 
-		if(!regexec(&regex, line_ptr, 3, matches, 0)) {
+		if (!regexec(&regex, line_ptr, 3, matches, 0)) {
 			char *virtual    = xstrdup(&line_ptr[matches[1].rm_so]);	/* TODO: free() this */
 			virtual[ matches[1].rm_eo - matches[1].rm_so] = 0;
-			if(*virtual == '$')
+			if (*virtual == '$')
 				virtual++;
 
 			char *services = xstrdup(&line_ptr[matches[2].rm_so]);	/* TODO: free() this */
@@ -338,7 +337,7 @@ void parse_insserv()
 
 			void parse_insserv_parse_service(char *service, void *arg) {
 				const char *services;
-				switch(*service) {
+				switch (*service) {
 					case '$':
 						service++;
 						services = lsb_v2s(service);
@@ -347,12 +346,12 @@ void parse_insserv()
 						services = service;
 						break;
 				}
-				if(services == NULL)
+				if (services == NULL)
 					return;
 
 				size_t len = strlen(services);
 
-				if(&services_unrolled_ptr[len] >= services_unrolled_end) {
+				if (&services_unrolled_ptr[len] >= services_unrolled_end) {
 					fprintf(stderr, "Error: Too long field value.\n");
 					exit(EOVERFLOW);
 				}
@@ -397,12 +396,12 @@ void lsb_init()
 
 	/* Remembering hardcoded values: */
 	entry_ptr = entries_v2s;
-	while(entry_ptr->key != NULL) {
+	while (entry_ptr->key != NULL) {
 		hsearch_r(*entry_ptr, ENTER, &entry_res_ptr, &ht_lsb_v2s);
 		entry_ptr++;
 	}
 	entry_ptr = entries_s2v;
-	while(entry_ptr->key != NULL) {
+	while (entry_ptr->key != NULL) {
 		hsearch_r(*entry_ptr, ENTER, &entry_res_ptr, &ht_lsb_s2v);
 		entry_ptr++;
 	}
@@ -418,7 +417,7 @@ static inline const char *lsb_x2x(const char *const lsb_virtual, hsearch_data_t 
 	entry.key = (char *)lsb_virtual;
 
 	hsearch_r(entry, FIND, &entry_ptr, ht);
-	if(entry_ptr != NULL)
+	if (entry_ptr != NULL)
 		return entry_ptr->data;
 
 	return NULL;
@@ -444,11 +443,11 @@ char *lsb_expand(const char *const _services)
 	char *services = xstrdup(_services);
 
 	void lsb_expand_parse_service(const char *service, void *arg) {
-		switch(*service) {
+		switch (*service) {
 			case '$': {
 				const char * const service_expanded = lsb_v2s(&service[1]);
 
-				if(service_expanded == NULL)
+				if (service_expanded == NULL)
 					return;
 
 				service = service_expanded;
@@ -458,7 +457,7 @@ char *lsb_expand(const char *const _services)
 		}
 
 		size_t service_len = strlen(service);
-		if(&ptr[service_len+2] > ret_end) {
+		if (&ptr[service_len+2] > ret_end) {
 			fprintf(stderr, "Error: Services list line is too long: %s\n", services);
 			exit(EMSGSIZE);
 		}
@@ -477,32 +476,32 @@ char *lsb_expand(const char *const _services)
 
 static void lsb_header_parse(const char *const header, char *value)
 {
-	if(!strcmp(header, "provides")) {
+	if (!strcmp(header, "provides")) {
 		PROVIDE(value);
 	} else
-	if(!strcmp(header, "required-start")) {
+	if (!strcmp(header, "required-start")) {
 		NEED(value);
 	} else
-/*	if(!strcmp(header, "required-stop")) {
+/*	if (!strcmp(header, "required-stop")) {
 	} else
-	if(!strcmp(header, "default-start")) {
+	if (!strcmp(header, "default-start")) {
 	} else
-	if(!strcmp(header, "default-stop")) {
+	if (!strcmp(header, "default-stop")) {
 	} else*/
-	if(!strcmp(header, "short-description")) {
+	if (!strcmp(header, "short-description")) {
 		description = value;
 	} else
-/*	if(!strcmp(header, "description")) {
+/*	if (!strcmp(header, "description")) {
 	} else*/
-	if(!strcmp(header, "should-start")) {
+	if (!strcmp(header, "should-start")) {
 		USE(value);
 	} else
-/*	if(!strcmp(header, "should-stop")) {
+/*	if (!strcmp(header, "should-stop")) {
 	} else*/
-	if(!strcmp(header, "x-start-before")) {
+	if (!strcmp(header, "x-start-before")) {
 		BEFORE(value);
 	} else
-/*	if(!strcmp(header, "x-stop-after")) {
+/*	if (!strcmp(header, "x-stop-after")) {
 	} else*/
 	{}
 
@@ -512,7 +511,7 @@ static void lsb_header_parse(const char *const header, char *value)
 char *strtolower(char *_str)
 {
 	char *str = _str;
-	while(*str) *(str++) |= 0x20;
+	while (*str) *(str++) |= 0x20;
 	return _str;
 }
 
@@ -520,8 +519,8 @@ lsb_parse_state_t lsb_parse(const char *initdscript)
 {
 	FILE *file_initdscript = fopen(initdscript, "r");
 
-	if(file_initdscript == NULL) {
-		fprintf(stderr, "Error: Unable to read \"%s\": %i: %s\n", 
+	if (file_initdscript == NULL) {
+		fprintf(stderr, "Error: Unable to read \"%s\": %i: %s\n",
 			initdscript, errno, strerror(errno));
 		exit(errno);
 	}
@@ -536,15 +535,15 @@ lsb_parse_state_t lsb_parse(const char *initdscript)
 	size_t line_len;
 	size_t line_size = 0;
 	char *line_ptr = NULL;
-	while((line_len = getline(&line_ptr, &line_size, file_initdscript))!=-1) {
-		if(!line_len)
+	while ((line_len = getline(&line_ptr, &line_size, file_initdscript))!=-1) {
+		if (!line_len)
 			continue;
 
 		line_ptr[--line_len] = 0;	/* cutting-off '\n' */
 
-		switch(state) {
+		switch (state) {
 			case LP_STARTED: {
-				if(!regexec(&regex_start, line_ptr, 0, NULL, 0)) {
+				if (!regexec(&regex_start, line_ptr, 0, NULL, 0)) {
 					state = LP_PARSING_LSB;
 					continue;
 				}
@@ -553,7 +552,7 @@ lsb_parse_state_t lsb_parse(const char *initdscript)
 			case LP_PARSING_LSB: {
 				regmatch_t matches[4] = {{0}};
 
-				if(!regexec(&regex_header, line_ptr, 3, matches, 0)) {
+				if (!regexec(&regex_header, line_ptr, 3, matches, 0)) {
 					char *header = xstrdup(&line_ptr[matches[1].rm_so]);
 					header[matches[1].rm_eo - matches[1].rm_so] = 0;
 
@@ -564,7 +563,7 @@ lsb_parse_state_t lsb_parse(const char *initdscript)
 
 					free(header);
 				} else
-				if(!regexec(&regex_end, line_ptr, 0, NULL, 0)) {
+				if (!regexec(&regex_end, line_ptr, 0, NULL, 0)) {
 					state = LP_COMPLETE;
 					goto l_lsb_parse_end;
 				}
@@ -584,7 +583,7 @@ l_lsb_parse_end:
 static inline void print_relation(char **relation)
 {
 	char **ptr = relation;
-	while(*ptr != NULL) {
+	while (*ptr != NULL) {
 		printf(" %s", *ptr);
 		ptr++;
 	}
@@ -594,28 +593,28 @@ static inline void print_relation(char **relation)
 
 void lsb_print_orc()
 {
-	if(description != NULL)
+	if (description != NULL)
 		printf("description=\"%s\"\n\n", description);
 
 	printf("%s", "depend () {\n");
 
-	if(*provide != NULL) {
+	if (*provide != NULL) {
 		printf("%s", "\tprovide");
 		print_relation(provide);
 		printf("\n");
 	} else
 		printf("\tprovide %s\n", service_me);
-	if(*use != NULL) {
+	if (*use != NULL) {
 		printf("%s", "\tuse");
 		print_relation(use);
 		printf("\n");
 	}
-	if(*need != NULL) {
+	if (*need != NULL) {
 		printf("%s", "\tneed");
 		print_relation(need);
 		printf("\n");
 	}
-	if(*before != NULL) {
+	if (*before != NULL) {
 		printf("%s", "\tbefore");
 		print_relation(before);
 		printf("\n");
@@ -627,13 +626,13 @@ void lsb_print_orc()
 
 int main(int argc, char *argv[])
 {
-	if(argc <= 1)
+	if (argc <= 1)
 		syntax();
 
 	const char *initdscript = argv[1];
 	service_me		= basename(xstrdup(initdscript));
 
-	if(access(initdscript, R_OK)) {
+	if (access(initdscript, R_OK)) {
 		fprintf(stderr, "Cannot get read access to file \"%s\": %i: %s\n",
 			initdscript, errno, strerror(errno));
 		exit(errno);
@@ -641,9 +640,8 @@ int main(int argc, char *argv[])
 
 	lsb_init();
 
-	if(lsb_parse(initdscript) == LP_COMPLETE)
+	if (lsb_parse(initdscript) == LP_COMPLETE)
 		lsb_print_orc();
 
 	exit(0);
 }
-

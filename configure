@@ -1,0 +1,10 @@
+#!/bin/sh
+
+(
+
+if [ -f "../includes/helpers.h" ]; then
+	echo '#include "../includes/helpers.h"'
+fi
+
+) > configuration.h
+

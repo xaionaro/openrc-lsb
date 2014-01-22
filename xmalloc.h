@@ -27,6 +27,17 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
  */
 
+/*
+   Below functions are already in src/includes/helpers.h of OpenRC.
+   So, if the helpers.h is loaded, then __HELPERS_H__ will be set
+   and we don't need to load own implementation.
+ */
+#ifndef __HELPERS_H__
+#define MALLOC malloc
+#define REALLOC realloc
+#define CALLOC calloc
+#define STRDUP strdup
+
 #include <stdio.h>	/* fprintf()	*/
 #include <stdlib.h>	/* size_t	*/
 #include <string.h>	/* strerror()	*/
@@ -38,9 +49,9 @@ static inline void *xmalloc(size_t size)
 	size++;	/* Just in case	*/
 #endif
 
-	void *ret = malloc(size);
+	void *ret = MALLOC(size);
 
-	if(ret == NULL) {
+	if (ret == NULL) {
 		fprintf(stderr, "xmalloc(%li): Cannot allocate memory (#%i: %s).\n", size, errno, strerror(errno));
 		exit(errno);
 	}
@@ -58,9 +69,9 @@ static inline void *xcalloc(size_t nmemb, size_t size)
 	size++;	 /* Just in case	*/
 #endif
 
-	void *ret = calloc(nmemb, size);
+	void *ret = CALLOC(nmemb, size);
 
-	if(ret == NULL) {
+	if (ret == NULL) {
 		fprintf(stderr, "xcalloc(%li): Cannot allocate memory (#%i: %s).\n", size, errno, strerror(errno));
 		exit(errno);
 	}
@@ -75,9 +86,9 @@ static inline void *xrealloc(void *oldptr, size_t size)
 	size++;	/* Just in case */
 #endif
 
-	void *ret = realloc(oldptr, size);
+	void *ret = REALLOC(oldptr, size);
 
-	if(ret == NULL) {
+	if (ret == NULL) {
 		fprintf(stderr, "xrealloc(%p, %li): Cannot reallocate memory (#%i: %s).\n", oldptr, size, errno, strerror(errno));
 		exit(errno);
 	}
@@ -86,9 +97,9 @@ static inline void *xrealloc(void *oldptr, size_t size)
 }
 
 static inline char *xstrdup(const char *s) {
-	char *ret = strdup(s);
+	char *ret = STRDUP(s);
 
-	if(ret == NULL) {
+	if (ret == NULL) {
 		fprintf(stderr, "xstrdup(%p): Cannot duplicate string (#%i: %s).\n", s, errno, strerror(errno));
 		exit(errno);
 	}
@@ -96,3 +107,4 @@ static inline char *xstrdup(const char *s) {
 	return ret;
 }
 
+#endif /* ifndef __HELPERS_H__ */

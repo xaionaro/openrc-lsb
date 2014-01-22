@@ -23,7 +23,7 @@ binary=lsb2rcconf
 
 #.PHONY: doc
 
-all: $(objs)
+all: configuration.h $(objs)
 	$(CC) $(CFLAGS) $(LDFLAGS) $(objs) $(LIBS) -o $(binary)
 
 %.o: %.c
@@ -32,7 +32,13 @@ all: $(objs)
 clean:
 	rm -f $(binary) $(objs)
 
+configuration.h:
+	./configure
+
 distclean: clean
+
+test:
+	./tests/run.sh
 
 install:
 	install -d "$(INSTDIR)/lib/rc/bin" "$(INSTDIR)/share/man/man1"

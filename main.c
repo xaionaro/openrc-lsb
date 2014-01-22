@@ -103,6 +103,13 @@ static inline int hcreate_r_2_nop(size_t nel, hsearch_data_t *htab) {
 
 /* === code self === */
 
+enum lsb_parse_state {
+	LP_STARTED = 0,
+	LP_PARSING_LSB,
+	LP_COMPLETE,
+};
+typedef enum lsb_parse_state lsb_parse_state_t;
+
 extern const char *lsb_v2s(const char *const lsb_virtual);
 
 #define PATH_INSSERV	"/etc/insserv.conf"
@@ -509,7 +516,7 @@ char *strtolower(char *_str)
 	return _str;
 }
 
-void lsb_parse(const char *initdscript)
+lsb_parse_state_t lsb_parse(const char *initdscript)
 {
 	FILE *file_initdscript = fopen(initdscript, "r");
 
@@ -525,12 +532,7 @@ void lsb_parse(const char *initdscript)
 	xregcomp(&regex_header, "^#\\s*(\\S+):\\s\\s*(.*\\S)\\s*$", REG_EXTENDED);
 	xregcomp(&regex_end,    "^### END INIT INFO\\s*$",          REG_EXTENDED);
 
-	enum lsb_parse_state {
-		LP_STARTED = 0,
-		LP_PARSING_LSB = 1
-	};
-
-	enum lsb_parse_state state = LP_STARTED;
+	lsb_parse_state_t state = LP_STARTED;
 	size_t line_len;
 	size_t line_size = 0;
 	char *line_ptr = NULL;
@@ -562,17 +564,21 @@ void lsb_parse(const char *initdscript)
 
 					free(header);
 				} else
-				if(!regexec(&regex_end, line_ptr, 0, NULL, 0))
+				if(!regexec(&regex_end, line_ptr, 0, NULL, 0)) {
+					state = LP_COMPLETE;
 					goto l_lsb_parse_end;
+				}
 				break;
 			}
+			case LP_COMPLETE:
+				goto l_lsb_parse_end;
 		}
 	}
 
 l_lsb_parse_end:
 
 	fclose(file_initdscript);
-	return;
+	return state;
 }
 
 static inline void print_relation(char **relation)
@@ -635,9 +641,9 @@ int main(int argc, char *argv[])
 
 	lsb_init();
 
-	lsb_parse(initdscript);
-
-	lsb_print_orc();
+	if(lsb_parse(initdscript) == LP_COMPLETE)
+		lsb_print_orc();
 
 	exit(0);
 }
+

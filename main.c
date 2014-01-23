@@ -479,12 +479,10 @@ static void lsb_header_parse(const char *const header, char *value)
 	if (!strcmp(header, "provides")) {
 		PROVIDE(value);
 	} else
-	if (!strcmp(header, "required-start")) {
+	if (!strcmp(header, "required-start") || !strcmp(header, "required-stop")) {
 		NEED(value);
 	} else
-/*	if (!strcmp(header, "required-stop")) {
-	} else
-	if (!strcmp(header, "default-start")) {
+/*	if (!strcmp(header, "default-start")) {
 	} else
 	if (!strcmp(header, "default-stop")) {
 	} else*/
@@ -493,16 +491,12 @@ static void lsb_header_parse(const char *const header, char *value)
 	} else
 /*	if (!strcmp(header, "description")) {
 	} else*/
-	if (!strcmp(header, "should-start")) {
+	if (!strcmp(header, "should-start") || !strcmp(header, "should-stop")) {
 		USE(value);
 	} else
-/*	if (!strcmp(header, "should-stop")) {
-	} else*/
-	if (!strcmp(header, "x-start-before")) {
+	if (!strcmp(header, "x-start-before") || !strcmp(header, "x-stop-after")) {
 		BEFORE(value);
 	} else
-/*	if (!strcmp(header, "x-stop-after")) {
-	} else*/
 	{}
 
 	return;

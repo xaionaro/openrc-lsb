@@ -40,7 +40,7 @@ distclean: clean
 test:
 	sh tests/run.sh
 
-install:
+install: all
 	install -d "$(INSTDIR)/lib/rc/bin" "$(INSTDIR)/share/man/man1"
 ifeq ($(STRIP_BINARY),yes)
 	strip --strip-unneeded -R .comment -R .GCC.command.line -R .note.gnu.gold-version "$(INSTDIR)/lib/rc/bin/$(binary)"

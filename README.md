@@ -3,6 +3,4 @@ openrc-lsb
 
 lsb.pl reimplementation on C
 
-to compile portable, try
-
-    STDFLAG='-D_POSIX_C_SOURCE=200809L' make clean all
+This tool was been [used](http://wiki.debian.org/OpenRC) to parse LSB headers by OpenRC for Debian systems.

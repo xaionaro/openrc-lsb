@@ -133,6 +133,7 @@ hsearch_data_t ht_lsb_s2v = {0};
 
 char *description  = NULL;
 char *service_me;
+char me_hasSall;
 
 runlevel_t runlevel_my = RL_UNKNOWN;
 
@@ -687,8 +688,8 @@ void lsb_init()
 		entry_ptr++;
 	}*/
 
-	/* Scanning init.d to be able to interpret "$all" in a good approach */
-	scan_initd();
+	if (me_hasSall) /* Scanning init.d to be able to interpret "$all" in a good approach */
+		scan_initd();
 
 	/* Parse /etc/insserv.conf */
 	parse_insserv();
@@ -740,9 +741,22 @@ void lsb_print_orc()
 
 int main(int argc, char *argv[])
 {
-
-	int lsb_header_parse_runlevel(const char *const header, char *value)
+	int lsb_header_parse_stage0(const char *const header, char *value)
 	{
+		if (!strcmp(header, "required-start") || !strcmp(header, "required-stop") || !strcmp(header, "should-start") || !strcmp(header, "should-stop")) { 
+			char *ptr = strstr(value, "$all");
+			if (ptr == NULL)
+				return 0;
+			switch (ptr[4]) {
+				case 0:
+				case '\r':
+				case '\n':
+				case '\t':
+				case ' ':
+					me_hasSall = 1;
+					break;
+			}
+		} else
 		if (!strcmp(header, "default-start")) {
 			switch (*value) {
 				case 'S':
@@ -790,11 +804,12 @@ int main(int argc, char *argv[])
 		exit(errno);
 	}
 
-	lsb_init();
-
-	/* Getting my runlevel */
-	if (lsb_parse(initdscript, lsb_header_parse_runlevel) != LP_COMPLETE)
+	me_hasSall = 0;
+	/* Getting my runlevel and "$all" presence */
+	if (lsb_parse(initdscript, lsb_header_parse_stage0) != LP_COMPLETE)
 		exit(-1);
+
+	lsb_init();
 
 	/* Getting my dependencies */
 	if (lsb_parse(initdscript, lsb_header_parse_dependencies) == LP_COMPLETE)

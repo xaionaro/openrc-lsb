@@ -528,8 +528,8 @@ l_lsb_parse_end:
 	return state;
 }
 
-static inline void allservices_add(runlevel_t runlevel, const char *const service_name)
-{
+void allservices_add_perone(const char *service_name, void *arg) {
+	runlevel_t runlevel = (runlevel_t)arg;
 	char *ptr;
 	size_t len = strlen(service_name);
 
@@ -547,6 +547,12 @@ static inline void allservices_add(runlevel_t runlevel, const char *const servic
 
 	allservices_len[runlevel] += len+2;
 
+	return;
+}
+
+static inline void allservices_add(runlevel_t runlevel, const char *const services)
+{
+	services_foreach(services, allservices_add_perone, (void *)runlevel);
 	return;
 }
 

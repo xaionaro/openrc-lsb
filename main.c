@@ -46,8 +46,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <libgen.h>	/* basename()	*/
 #include <search.h>	/* hsearch_r()	*/
 #include <sys/types.h>	/* regexec()	*/
+#include <sys/stat.h>	/* stat()	*/
 #include <regex.h>	/* regexec()	*/
 #include <unistd.h>	/* access()	*/
+#include <dirent.h>	/* readdir()	*/
 
 #include "configuration.h"
 #include "xmalloc.h"
@@ -109,8 +111,17 @@ enum lsb_parse_state {
 };
 typedef enum lsb_parse_state lsb_parse_state_t;
 
+enum runlevel {
+	RL_UNKNOWN = 0,
+	RL_S,
+	RL_NS,
+	RL_MAX
+};
+typedef enum runlevel runlevel_t;
+
 extern const char *lsb_v2s(const char *const lsb_virtual);
 
+#define PATH_INITD	"/etc/init.d"
 #define PATH_INSSERV	"/etc/insserv.conf"
 
 #define HT_SIZE_VSRV	(1<<8)
@@ -122,6 +133,13 @@ hsearch_data_t ht_lsb_s2v = {0};
 
 char *description  = NULL;
 char *service_me;
+
+runlevel_t runlevel_my = RL_UNKNOWN;
+
+/* "$all" */
+char   *allservices[RL_MAX]      = {NULL};
+size_t  allservices_size[RL_MAX] = {0};
+size_t  allservices_len[RL_MAX]  = {0};
 
 typedef void (*services_foreach_funct_t)(const char *const service, void *arg);
 
@@ -371,45 +389,6 @@ void parse_insserv()
 	fclose(file_insserv);
 }
 
-void lsb_init()
-{
-	/* Hardcoded: */
-	ENTRY entries_v2s[] = {
-		{"all",		"+*"},
-		{NULL,		NULL},
-	};
-	ENTRY entries_s2v[] = {
-		{"*",		"all"},
-		{NULL,		NULL},
-	};
-
-
-	/* Initialization: */
-	hcreate_r(HT_SIZE_VSRV,	&ht_lsb_v2s);
-	hcreate_r(HT_SIZE_VSRV,	&ht_lsb_s2v);
-	hcreate_r(MAX_need,	&need_ht);
-	hcreate_r(MAX_use,	&use_ht);
-	hcreate_r(MAX_before,	&before_ht);
-	hcreate_r(MAX_provide,	&provide_ht);
-
-	ENTRY *entry_ptr, *entry_res_ptr;
-
-	/* Remembering hardcoded values: */
-	entry_ptr = entries_v2s;
-	while (entry_ptr->key != NULL) {
-		hsearch_r(*entry_ptr, ENTER, &entry_res_ptr, &ht_lsb_v2s);
-		entry_ptr++;
-	}
-	entry_ptr = entries_s2v;
-	while (entry_ptr->key != NULL) {
-		hsearch_r(*entry_ptr, ENTER, &entry_res_ptr, &ht_lsb_s2v);
-		entry_ptr++;
-	}
-
-	/* Parse /etc/insserv.conf */
-	parse_insserv();
-}
-
 static inline const char *lsb_x2x(const char *const lsb_virtual, hsearch_data_t *ht)
 {
 	ENTRY entry, *entry_ptr;
@@ -425,6 +404,9 @@ static inline const char *lsb_x2x(const char *const lsb_virtual, hsearch_data_t 
 
 const char *lsb_v2s(const char *const lsb_virtual)
 {
+	if (!strcmp(lsb_virtual, "all"))
+		return allservices[runlevel_my];
+
 	return lsb_x2x(lsb_virtual, &ht_lsb_v2s);
 }
 
@@ -474,34 +456,6 @@ char *lsb_expand(const char *const _services)
 	return ret;
 }
 
-static void lsb_header_parse(const char *const header, char *value)
-{
-	if (!strcmp(header, "provides")) {
-		PROVIDE(value);
-	} else
-	if (!strcmp(header, "required-start") || !strcmp(header, "required-stop")) {
-		NEED(value);
-	} else
-/*	if (!strcmp(header, "default-start")) {
-	} else
-	if (!strcmp(header, "default-stop")) {
-	} else*/
-	if (!strcmp(header, "short-description")) {
-		description = value;
-	} else
-/*	if (!strcmp(header, "description")) {
-	} else*/
-	if (!strcmp(header, "should-start") || !strcmp(header, "should-stop")) {
-		USE(value);
-	} else
-	if (!strcmp(header, "x-start-before") || !strcmp(header, "x-stop-after")) {
-		BEFORE(value);
-	} else
-	{}
-
-	return;
-}
-
 char *strtolower(char *_str)
 {
 	char *str = _str;
@@ -509,7 +463,7 @@ char *strtolower(char *_str)
 	return _str;
 }
 
-lsb_parse_state_t lsb_parse(const char *initdscript)
+lsb_parse_state_t lsb_parse(const char *initdscript, int (*lsb_header_parse)(const char *const, char *))
 {
 	FILE *file_initdscript = fopen(initdscript, "r");
 
@@ -574,6 +528,166 @@ l_lsb_parse_end:
 	return state;
 }
 
+static inline void allservices_add(runlevel_t runlevel, const char *const service_name)
+{
+	char *ptr;
+	size_t len = strlen(service_name);
+
+	if (len + 3 + allservices_len[runlevel] >= allservices_size[runlevel]) {
+		allservices_size[runlevel] += BUFSIZ;
+		allservices[runlevel] = realloc(allservices[runlevel], allservices_size[runlevel]);
+	}
+
+	ptr  = &allservices[runlevel][allservices_len[runlevel]];
+	*(ptr++)  = '+';
+	memcpy(ptr, service_name, len);
+	  ptr    += len;
+	*(ptr++)  = ' ';
+	*(ptr++)  =  0;
+
+	allservices_len[runlevel] += len+2;
+
+	return;
+}
+
+void scan_initd()
+{
+	DIR *initd = opendir(PATH_INITD);
+	char path[PATH_MAX] = PATH_INITD"/", *service_name;
+	runlevel_t runlevel;
+	char has_Sall;
+
+	int lsb_header_parse(const char *const header, char *value)
+	{
+		if (!strcmp(header, "provides")) {
+			if (service_name == NULL)
+				service_name = xstrdup(value);
+		} else
+		if (!strcmp(header, "required-start") || !strcmp(header, "required-stop") || !strcmp(header, "should-start") || !strcmp(header, "should-stop")) { 
+			char *ptr = strstr(value, "$all");
+			if (ptr == NULL)
+				return 0;
+			switch (ptr[4]) {
+				case 0:
+				case '\r':
+				case '\n':
+				case '\t':
+				case ' ':
+					has_Sall = 1;
+					break;
+			}
+		} else
+		if (!strcmp(header, "default-start")) {
+			switch (*value) {
+				case 'S':
+					runlevel = RL_S;
+					break;
+				default:
+					runlevel = RL_NS;
+					break;
+			}
+		}
+
+		return 0;
+	}
+
+	if (initd == NULL) {
+		fprintf(stderr, "Error: Cannot open directory \""PATH_INITD"\": %i: %s.\n",
+			errno, strerror(errno));
+		exit(errno);
+	}
+
+	while (1) {
+		struct dirent *dent;
+		struct stat fstat;
+
+		dent = readdir(initd);
+		if (dent == NULL)
+			break;
+
+		if (dent->d_type != DT_REG && dent->d_type != DT_LNK)
+			continue;	/* our interest is files and symlinks only */
+
+		strcpy(&path[sizeof(PATH_INITD)], dent->d_name);
+
+		if (stat(path, &fstat)) {
+			fprintf(stderr, "Error: Cannot stat() on file \"%s\": %i: %s. Ignoring.\n",
+				path, errno, strerror(errno));
+			continue;
+		}
+
+		if ((fstat.st_mode&S_IFMT) != S_IFREG)
+			continue;	/* our interest is files only */
+
+		runlevel = RL_UNKNOWN;
+		has_Sall = 0;
+		service_name = NULL;
+
+		if (lsb_parse(path, lsb_header_parse) == LP_COMPLETE)
+			if (!has_Sall && runlevel != RL_UNKNOWN) {
+				if (service_name == NULL)
+					service_name = dent->d_name;
+
+				allservices_add(runlevel, service_name);
+			}
+
+		if (service_name != NULL && service_name != dent->d_name)
+			free(service_name);
+	};
+
+	/* cutting the spaces on the end */
+	runlevel = 0;
+	while (runlevel < RL_MAX) {
+		if (allservices_len[runlevel])
+			allservices[runlevel][--allservices_len[runlevel]] = 0;
+		runlevel++;
+	}
+
+	closedir(initd);
+	return;
+}
+
+void lsb_init()
+{
+	/* Hardcoded: * /
+	ENTRY entries_v2s[] = {
+		{NULL,		NULL},
+	};
+	ENTRY entries_s2v[] = {
+		{NULL,		NULL},
+	};*/
+
+
+	/* Initialization: */
+	hcreate_r(HT_SIZE_VSRV,	&ht_lsb_v2s);
+	hcreate_r(HT_SIZE_VSRV,	&ht_lsb_s2v);
+	hcreate_r(MAX_need,	&need_ht);
+	hcreate_r(MAX_use,	&use_ht);
+	hcreate_r(MAX_before,	&before_ht);
+	hcreate_r(MAX_provide,	&provide_ht);
+
+
+	/* Remembering hardcoded values: * /
+	ENTRY *entry_ptr, *entry_res_ptr;
+
+	entry_ptr = entries_v2s;
+	while (entry_ptr->key != NULL) {
+		hsearch_r(*entry_ptr, ENTER, &entry_res_ptr, &ht_lsb_v2s);
+		entry_ptr++;
+	}
+	entry_ptr = entries_s2v;
+	while (entry_ptr->key != NULL) {
+		hsearch_r(*entry_ptr, ENTER, &entry_res_ptr, &ht_lsb_s2v);
+		entry_ptr++;
+	}*/
+
+	/* Scanning init.d to be able to interpret "$all" in a good approach */
+	scan_initd();
+
+	/* Parse /etc/insserv.conf */
+	parse_insserv();
+}
+
 static inline void print_relation(char **relation)
 {
 	char **ptr = relation;
@@ -620,6 +734,44 @@ void lsb_print_orc()
 
 int main(int argc, char *argv[])
 {
+
+	int lsb_header_parse_runlevel(const char *const header, char *value)
+	{
+		if (!strcmp(header, "default-start")) {
+			switch (*value) {
+				case 'S':
+					runlevel_my = RL_S;
+					break;
+				default:
+					runlevel_my = RL_NS;
+					break;
+			}
+		}
+
+		return 0;
+	}
+
+	int lsb_header_parse_dependencies(const char *const header, char *value)
+	{
+		if (!strcmp(header, "provides")) {
+			PROVIDE(value);
+		} else
+		if (!strcmp(header, "required-start") || !strcmp(header, "required-stop")) {
+			NEED(value);
+		} else
+		if (!strcmp(header, "short-description")) {
+			description = value;
+		} else
+		if (!strcmp(header, "should-start") || !strcmp(header, "should-stop")) {
+			USE(value);
+		} else
+		if (!strcmp(header, "x-start-before") || !strcmp(header, "x-stop-after")) {
+			BEFORE(value);
+		}
+
+		return 0;
+	}
+
 	if (argc <= 1)
 		syntax();
 
@@ -634,7 +786,12 @@ int main(int argc, char *argv[])
 
 	lsb_init();
 
-	if (lsb_parse(initdscript) == LP_COMPLETE)
+	/* Getting my runlevel */
+	if (lsb_parse(initdscript, lsb_header_parse_runlevel) != LP_COMPLETE)
+		exit(-1);
+
+	/* Getting my dependencies */
+	if (lsb_parse(initdscript, lsb_header_parse_dependencies) == LP_COMPLETE)
 		lsb_print_orc();
 
 	exit(0);

@@ -52,6 +52,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "configuration.h"
 #include "xmalloc.h"
 
+#define SERVICENAME_ALL "_all"
+
 /* === portability hacks === */
 
 #ifndef _GNU_SOURCE
@@ -153,6 +155,7 @@ struct relation_arg {
 	int  			 *relation_count_p;
 	int			  relation_max;
 	hsearch_data_t 		 *relation_ht_p;
+	char			  relation_has_all; /* did we met "$all" virtual services or not */
 };
 
 #define RELATION(relation_name)\
@@ -219,6 +222,10 @@ void relation_add(const char *const _service, struct relation_arg *arg_p)
 		switch (*service) {
 			case '$': {
 				service++;
+
+				if (!arg_p->relation_has_all)
+					arg_p->relation_has_all = (strcmp(service, "all") == 0);
+
 				const char *const services = lsb_v2s(service);
 				if (services != NULL) {
 					void relation_add_mark_real_service(char *service, void *arg) {
@@ -375,12 +382,12 @@ void lsb_init()
 {
 	/* Hardcoded: */
 	ENTRY entries_v2s[] = {
-		{"all",		"+*"},
-		{NULL,		NULL},
+		{"all",			"+"SERVICENAME_ALL},
+		{NULL,			NULL},
 	};
 	ENTRY entries_s2v[] = {
-		{"*",		"all"},
-		{NULL,		NULL},
+		{SERVICENAME_ALL,	"all"},
+		{NULL,			NULL},
 	};
 
 
@@ -434,8 +441,8 @@ const char *lsb_s2v(const char *const lsb_virtual)
 	return lsb_x2x(lsb_virtual, &ht_lsb_s2v);
 }
 #endif
-
-char *lsb_expand(const char *const _services)
+#if 0
+char *lsb_expand(const char *const _services, int *has_Sall)
 {
 	char *ret = xmalloc(BUFSIZ);
 	char *ptr = ret, *ret_end = &ret[BUFSIZ];
@@ -446,6 +453,8 @@ char *lsb_expand(const char *const _services)
 		switch (*service) {
 			case '$': {
 				const char * const service_expanded = lsb_v2s(&service[1]);
+				if (has_Sall != NULL)
+					has_Sall = (strcmp(&service[1], "all") == 0);
 
 				if (service_expanded == NULL)
 					return;
@@ -473,7 +482,7 @@ char *lsb_expand(const char *const _services)
 	free(services);
 	return ret;
 }
-
+#endif
 static void lsb_header_parse(const char *const header, char *value)
 {
 	if (!strcmp(header, "provides")) {
@@ -569,6 +578,10 @@ lsb_parse_state_t lsb_parse(const char *initdscript)
 	}
 
 l_lsb_parse_end:
+
+	if (state == LP_COMPLETE)
+		if (! (use_arg.relation_has_all || need_arg.relation_has_all))
+			PROVIDE(SERVICENAME_ALL);
 
 	fclose(file_initdscript);
 	return state;

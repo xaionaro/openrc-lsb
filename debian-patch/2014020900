@@ -1,0 +1,923 @@
+Description: This patch adds support for the sysv-rc LSB headers
+ This is the take 2 of the LSB headers patch. The first version was using a
+ perl script, which isn't good enough (because of /usr/bin/perl, we need to
+ have /usr mounted early, which isn't possible). This rewrite in C fixes the
+ issue.
+Author: Dmitry Yu Okunev <dyokunev@ut.mephi.ru> 0x8E30679C, heroxbd <heroxbd@gentoo.org>
+Origin: upstream
+Date: 2014-02-09
+
+--- a/sh/gendepends.sh.in
++++ b/sh/gendepends.sh.in
+@@ -51,12 +51,14 @@
+ 	for RC_SERVICE in *; do
+ 		[ -x "$RC_SERVICE" -a -f "$RC_SERVICE" ] || continue
+ 
+-		# Only generate dependencies for OpenRC scripts
++		lsbh=$(lsb2rcconf "$RC_SERVICE")
++		# Only generate dependencies for OpenRC and LSB scripts
+ 		read one two three <"$RC_SERVICE"
+ 		[ "$one" = "#!@SBINDIR@/runscript" ] || \
+ 		[ "$one" = "#!@SBINDIR@/openrc-run" ] || \
+ 		[ "$one" = "#!" -a "$two" = "@SBINDIR@/runscript" ] || \
+ 		[ "$one" = "#!" -a "$two" = "@SBINDIR@/openrc-run" ] || \
++		[ -n "${lsbh}" ] || \
+ 			continue
+ 		unset one two three
+ 
+@@ -83,10 +85,13 @@
+ 
+ 		[ -e @SYSCONFDIR@/rc.conf ] && . @SYSCONFDIR@/rc.conf
+ 
+-		if . "$_dir/$RC_SVCNAME"; then
+-			echo "$RC_SVCNAME" >&3
+-			_depend
++		if [ -n "${lsbh}" ]; then
++			eval "${lsbh}"
++		else
++			. "$_dir/$RC_SVCNAME"
+ 		fi
++		echo "$RC_SVCNAME" >&3
++		_depend
+ 		)
+ 	done
+ done
+--- a/sh/runscript.sh.in
++++ b/sh/runscript.sh.in
+@@ -223,28 +223,33 @@
+ 	cgroup_set_limits
+ 
+ # Load our script
+-sourcex "$RC_SERVICE"
+-
+-for _d in $required_dirs; do
+-	if [ ! -d $_d ]; then
+-		eerror "$RC_SVCNAME: \`$_d' is not a directory"
+-		exit 1
+-	fi
+-done
+-unset _d
+-
+-for _f in $required_files; do
+-	if [ ! -r $_f ]; then
+-		eerror "$RC_SVCNAME: \`$_f' is not readable"
+-		exit 1
++lsbh=$(lsb2rcconf "$RC_SERVICE")
++if [ -n "${lsbh}" ]; then
++	eval "${lsbh}"
++else
++	sourcex "$RC_SERVICE"
++
++	for _d in $required_dirs; do
++		if [ ! -d $_d ]; then
++			eerror "$RC_SVCNAME: \`$_d' is not a directory"
++			exit 1
++		fi
++	done
++	unset _d
++
++	for _f in $required_files; do
++		if [ ! -r $_f ]; then
++			eerror "$RC_SVCNAME: \`$_f' is not readable"
++			exit 1
++		fi
++	done
++	unset _f
++
++	if [ -n "$opts" ]; then
++			ewarn "Use of the opts variable is deprecated and will be"
++			ewarn "removed in the future."
++			ewarn "Please use extra_commands, extra_started_commands or extra_stopped_commands."
+ 	fi
+-done
+-unset _f
+-
+-if [ -n "$opts" ]; then
+-		ewarn "Use of the opts variable is deprecated and will be"
+-		ewarn "removed in the future."
+-		ewarn "Please use extra_commands, extra_started_commands or extra_stopped_commands."
+ fi
+ 
+ while [ -n "$1" ]; do
+@@ -258,7 +263,12 @@
+ 		_depend
+ 		cd /
+ 		continue
++	elif [ -n "${lsbh}" ]; then
++		. "${RC_SERVICE}"
++		shift
++		continue
+ 	fi
++
+ 	# See if we have the required function and run it
+ 	for _cmd in describe start stop status ${extra_commands:-$opts} \
+ 		$extra_started_commands $extra_stopped_commands
+--- a/src/Makefile
++++ b/src/Makefile
+@@ -1,7 +1,7 @@
+ # Copyright (c) 2007-2008 Roy Marples <roy@marples.name>
+ # Released under the 2-clause BSD license.
+ 
+-SUBDIR=		test libeinfo librc rc
++SUBDIR=		test libeinfo librc rc lsb2rcconf
+ 
+ ifeq (${MKTOOLS},yes)
+ SUBDIR+= tools
+--- a/src/librc/librc-depend.c
++++ b/src/librc/librc-depend.c
+@@ -1537,14 +1537,6 @@
+ 			    strcmp(depend, service) == 0)
+ 				continue;
+ 
+-			/* .sh files are not init scripts */
+-			l = strlen(depend);
+-			if (l > 2 &&
+-			    depend[l - 3] == '.' &&
+-			    depend[l - 2] == 's' &&
+-			    depend[l - 1] == 'h')
+-				continue;
+-
+ 			/* Remove our dependency if instructed */
+ 			if (depend[0] == '!') {
+ 				rc_stringlist_delete(deptype->services, depend + 1);
+--- a/src/librc/librc.c
++++ b/src/librc/librc.c
+@@ -91,13 +91,6 @@
+ 				r = stat(file, &buf);
+ 				if (r != 0)
+ 					continue;
+-
+-				/* .sh files are not init scripts */
+-				l = strlen(d->d_name);
+-				if (l > 2 && d->d_name[l - 3] == '.' &&
+-				    d->d_name[l - 2] == 's' &&
+-				    d->d_name[l - 1] == 'h')
+-					continue;
+ 			}
+ 			if (options & LS_DIR) {
+ 				if (stat(d->d_name, &buf) == 0 &&
+@@ -533,16 +526,6 @@
+ 		errno = EINVAL;
+ 		return false;
+ 	}
+-
+-	len = strlen(service);
+-
+-	/* .sh files are not init scripts */
+-	if (len > 2 && service[len - 3] == '.' &&
+-	    service[len - 2] == 's' &&
+-	    service[len - 1] == 'h') {
+-		errno = EINVAL;
+-		return false;
+-	}
+ 
+ 	if (!(file = rc_service_resolve(service))) {
+ 		errno = ENOENT;
+--- /dev/null
++++ b/src/lsb2rcconf/GNUmakefile
+@@ -0,0 +1,58 @@
++
++DESTDIR ?= 
++PREFIX  ?= /
++COMPRESS_MAN ?= yes
++STRIP_BINARY ?= yes
++#EXAMPLES ?= yes
++
++STDFLAG ?= -D_BSD_SOURCE
++CSECFLAGS ?= -fstack-protector-all -Wall --param ssp-buffer-size=4 -D_FORTIFY_SOURCE=2 -fstack-check -DPARANOID
++CFLAGS ?= -march=native -pipe -O2 -std=c99 
++CFLAGS += $(CSECFLAGS) $(STDFLAG)
++DEBUGCFLAGS ?= -pipe -Wall -Werror -ggdb3 -Wno-error=unused-variable $(CSECFLAGS)
++
++LDSECFLAGS ?= -Xlinker -zrelro
++LDFLAGS += $(LDSECFLAGS)
++
++INSTDIR = $(DESTDIR)$(PREFIX)
++
++objs=\
++main.o\
++
++binary=lsb2rcconf
++
++#.PHONY: doc
++
++all: $(objs)
++	$(CC) $(CFLAGS) $(LDFLAGS) $(objs) $(LIBS) -o $(binary)
++
++%.o: %.c
++	$(CC) $(CFLAGS) $(INC) $< -c -o $@
++
++clean:
++	rm -f $(binary) $(objs)
++
++distclean: clean
++
++test:
++	sh tests/run.sh
++
++install:
++	install -d "$(INSTDIR)/lib/rc/bin" "$(INSTDIR)/share/man/man1"
++ifeq ($(STRIP_BINARY),yes)
++	strip --strip-unneeded -R .comment -R .GCC.command.line -R .note.gnu.gold-version $(binary)
++endif
++	install -m 755 $(binary) "$(INSTDIR)"/lib/rc/bin
++#	install -m 644 man/man1/lsb2rcconf.1 "$(INSTDIR)"/share/man/man1/
++#ifeq ($(COMPRESS_MAN),yes)
++#	rm -f "$(INSTDIR)"/share/man/man1/lsb2rcconf.1.gz
++#	gzip "$(INSTDIR)"/share/man/man1/lsb2rcconf.1
++#endif
++
++deinstall:
++	rm -f "$(INSTDIR)"/lib/rc/lsb2rcconf "$(INSTDIR)"/share/man/man1/lsb2rcconf.1{,.gz}
++
++dpkg: clean
++	tar --exclude "debian" --exclude-vcs -C .. -cJvf ../openrc-lsb_0.0.orig.tar.xz openrc-lsb
++	dpkg-buildpackage -rfakeroot
++
+--- /dev/null
++++ b/src/lsb2rcconf/LICENSE
+@@ -0,0 +1,10 @@
++Copyright (c) 2014, Dmitry Yu Okunev <dyokunev@ut.mephi.ru> 0x8E30679C
++All rights reserved.
++
++Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
++
++1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
++
++2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
++
++THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+--- a/src/rc/rc-misc.c
++++ b/src/rc/rc-misc.c
+@@ -296,7 +296,7 @@
+ 		sigprocmask(SIG_SETMASK, &old, NULL);
+ 
+ 		/* Safe to run now */
+-		execl(file, file, "--lockfd", sfd, arg, (char *) NULL);
++		execl("/sbin/openrc-run", "/sbin/openrc-run", file, "--lockfd", sfd, arg, (char *) NULL);
+ 		fprintf(stderr, "unable to exec `%s': %s\n",
+ 		    file, strerror(errno));
+ 		svc_unlock(basename_c(service), fd);
+--- /dev/null
++++ b/src/lsb2rcconf/tests/run.sh
+@@ -0,0 +1,3 @@
++#!/bin/sh
++
++exit 0
+--- /dev/null
++++ b/src/lsb2rcconf/main.c
+@@ -0,0 +1,654 @@
++/*
++    lsb2rcconf - prints configuration for openrc's rc.conf based on LSB
++
++Copyright (c) 2014, Dmitry Yu Okunev <dyokunev@ut.mephi.ru> 0x8E30679C
++All rights reserved.
++
++Redistribution and use in source and binary forms, with or without
++modification, are permitted provided that the following conditions are met:
++
++1. Redistributions of source code must retain the above copyright notice, this
++list of conditions and the following disclaimer.
++
++2. Redistributions in binary form must reproduce the above copyright notice,
++this list of conditions and the following disclaimer in the documentation
++and/or other materials provided with the distribution.
++
++THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
++AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
++IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
++DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
++FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
++DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
++SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
++CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
++OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++
++ */
++
++/* If you have any question, I'll recommend you to ask irc.freenode.net#openrc */
++
++
++
++/* === includes === */
++
++/* #define _GNU_SOURCE	/ * hsearch_r()	*/
++
++#ifdef _GNU_SOURCE
++#define hsearch_data_t struct hsearch_data
++#endif
++
++#include <stdio.h>	/* fprintf()	*/
++#include <stdlib.h>	/* exit()	*/
++#include <string.h>	/* strcmp()	*/
++#include <errno.h>	/* ENVAL	*/
++#include <libgen.h>	/* basename()	*/
++#include <search.h>	/* hsearch_r()	*/
++#include <sys/types.h>	/* regexec()	*/
++#include <regex.h>	/* regexec()	*/
++#include <unistd.h>	/* access()	*/
++
++#include "../includes/helpers.h"
++
++
++#define SERVICENAME_ALL "_all"
++
++/* === portability hacks === */
++
++#ifndef _GNU_SOURCE
++#warning no hsearch_r() implementation available, using tsearch() instead. Compile with -D_GNU_SOURCE, please.
++/* hsearch_r() fallbacks to tsearch() :( */
++
++#define hsearch_data_t void *
++
++#define hsearch_r(...) hsearch_r_2_tsearch(__VA_ARGS__)
++static inline int hsearch_r_2_tsearch(ENTRY item, ACTION action, ENTRY **retval, hsearch_data_t *htab) {
++	int hsearch_r_2_tsearch_compare(const ENTRY *a, const ENTRY *b) {
++		return strcmp(a->key, b->key);
++	}
++
++	ENTRY **tret = NULL;
++
++	switch (action) {
++		case FIND: {
++			tret = tfind  (&item,      htab, (int (*)(const void *, const void *))hsearch_r_2_tsearch_compare);
++			break;
++		}
++		case ENTER: {
++			ENTRY *item_dup_p = xmalloc(sizeof(item));
++			item_dup_p->key  = xstrdup(item.key);
++			item_dup_p->data = item.data;
++			tret = tsearch(item_dup_p, htab, (int (*)(const void *, const void *))hsearch_r_2_tsearch_compare);
++			break;
++		}
++	}
++
++	if (tret == NULL) {
++		*retval = NULL;
++		return 0;
++	}
++	*retval = *tret;
++
++	return 0;
++}
++
++#define hcreate_r(...) hcreate_r_2_nop(__VA_ARGS__)
++static inline int hcreate_r_2_nop(size_t nel, hsearch_data_t *htab) {
++	return 1;
++}
++
++#endif /* ifndef _GNU_SOURCE */
++
++
++
++/* === code self === */
++
++enum lsb_parse_state {
++	LP_STARTED = 0,
++	LP_PARSING_LSB,
++	LP_COMPLETE,
++};
++typedef enum lsb_parse_state lsb_parse_state_t;
++
++extern const char *lsb_v2s(const char *const lsb_virtual);
++
++#define PATH_INSSERV	"/etc/insserv.conf"
++
++#define HT_SIZE_VSRV	(1<<8)
++
++/* virtual to value */
++hsearch_data_t ht_lsb_v2s = {0};
++/* value to virtual */
++hsearch_data_t ht_lsb_s2v = {0};
++
++char *description  = NULL;
++char *service_me;
++
++typedef void (*services_foreach_funct_t)(const char *const service, void *arg);
++
++static inline int services_foreach(const char *const _services, services_foreach_funct_t funct, void *arg)
++{
++	if (_services == NULL) {
++		fprintf(stderr, "Internal error (#0)\n");
++		exit(-1);
++	}
++
++	char *services = xstrdup(_services);
++	char *strtok_saveptr = NULL;
++	char *service = strtok_r(services, " \t", &strtok_saveptr);
++	do {
++		funct(service, arg);
++	} while ((service = strtok_r(NULL, " \t", &strtok_saveptr)));
++	/* free(services); */
++
++	return 0;
++}
++
++#define MAX_need	(1<<16)
++#define MAX_use		MAX_need
++#define MAX_provide	MAX_need
++#define MAX_before	MAX_need
++
++struct relation_arg {
++	char 			**relation;
++	int  			 *relation_count_p;
++	int			  relation_max;
++	hsearch_data_t 		 *relation_ht_p;
++	char			  relation_has_all; /* did we met "$all" virtual services or not */
++};
++
++#define RELATION(relation_name)\
++	char 			*relation_name[MAX_ ## relation_name + 1] = {NULL};\
++	int			 relation_name ## _count 	=  0;\
++	hsearch_data_t	 	 relation_name ## _ht		= {0};\
++	struct relation_arg	 relation_name ## _arg 		= \
++		{relation_name, &relation_name ## _count, MAX_ ## relation_name, &relation_name ##_ht};
++
++RELATION(need);
++RELATION(use);
++RELATION(provide);
++RELATION(before);
++
++
++void relation_add_oneservice(char *service, struct relation_arg *arg_p)
++{
++	switch (*service) {
++		case '+': {
++			service++;
++			if (arg_p->relation == need)	/* Moving optional services from need to use */
++				arg_p = &use_arg;
++		}
++		default: {
++			if (*(arg_p->relation_count_p))
++				if (!memcmp(arg_p->relation[0], "*", 2))
++					return;
++
++			if (!strcmp(service, "*")) {
++				arg_p->relation[0] = xstrdup("*");
++				arg_p->relation[1] = NULL;
++				*(arg_p->relation_count_p) = 1;
++				return;
++			}
++
++			ENTRY entry = {service, NULL}, *entry_res_ptr;
++			hsearch_r(entry, FIND, &entry_res_ptr, arg_p->relation_ht_p);
++			if (entry_res_ptr != NULL)
++				return;
++
++			arg_p->relation[(*arg_p->relation_count_p)++] = service;
++			hsearch_r(entry, ENTER, &entry_res_ptr, arg_p->relation_ht_p);
++		}
++	}
++}
++
++void relation_add(const char *const _service, struct relation_arg *arg_p)
++{
++	if (!strcmp(_service, service_me)) {
++		return;
++	}
++
++	char *service_buf = xstrdup(_service), *service = service_buf;
++
++	if (*arg_p->relation_count_p >= arg_p->relation_max) {
++		fprintf(stderr, "Too many records.\n");
++		exit(EOVERFLOW);
++	}
++	ENTRY entry = {service, NULL}, *entry_res_ptr;
++
++	hsearch_r(entry, FIND, &entry_res_ptr, arg_p->relation_ht_p);
++
++	if (entry_res_ptr == NULL) {
++		switch (*service) {
++			case '$': {
++				service++;
++
++				if (!arg_p->relation_has_all)
++					arg_p->relation_has_all = (strcmp(service, "all") == 0);
++
++				const char *const services = lsb_v2s(service);
++				if (services != NULL) {
++					void relation_add_mark_real_service(char *service, void *arg) {
++						relation_add_oneservice(service, arg_p);
++					}
++					services_foreach(services, (services_foreach_funct_t)relation_add_mark_real_service, NULL);
++				}
++				break;
++			}
++			default: {
++				relation_add_oneservice(service, arg_p);
++			}
++		}
++	}
++}
++
++#define RELATION_ADD(_relation, _services)\
++{\
++	char *services = xstrdup(_services);\
++	services_foreach(services, (services_foreach_funct_t)relation_add, &_relation ## _arg);\
++	free(services);\
++}
++
++static inline void NEED(const char *const _services)
++{
++	RELATION_ADD(need, _services);
++}
++static inline void USE(const char *const _services)
++{
++	RELATION_ADD(use, _services);
++}
++static inline void PROVIDE(const char *const _services)
++{
++	RELATION_ADD(provide, _services);
++}
++static inline void BEFORE(const char *const _services)
++{
++	RELATION_ADD(before, _services);
++}
++
++void syntax()
++{
++	fprintf(stderr, "lsb2rcconf /path/to/init/script\n");
++	exit(EINVAL);
++}
++
++static inline void lsb_x2x_add(char *key, char *data, hsearch_data_t *ht)
++{
++	ENTRY entry = {key, data}, *entry_res_ptr;
++
++	hsearch_r(entry, ENTER, &entry_res_ptr, ht);
++}
++
++void lsb_s2v_add(char *key, char *data)
++{
++	return lsb_x2x_add(key, data, &ht_lsb_s2v);
++}
++
++void lsb_v2s_add(char *key, char *data)
++{
++	return lsb_x2x_add(key, data, &ht_lsb_v2s);
++}
++
++static const int xregcomp(regex_t *preg, const char *regex, int cflags)
++{
++	int r;
++	if ((r=regcomp(preg, regex, cflags))) {
++		char buf[BUFSIZ];
++		regerror(r, preg, buf, BUFSIZ);
++		fprintf(stderr, "Error: Cannot compile regex: %i: %s\n", r, buf);
++		exit(r);
++	}
++
++	return r;
++}
++
++void parse_insserv()
++{
++	FILE *file_insserv = fopen(PATH_INSSERV, "r");
++	if (file_insserv == NULL) {
++		fprintf(stderr, "Error: Unable to read \""PATH_INSSERV"\": %i: %s\n", errno, strerror(errno));
++		exit(errno);
++	}
++
++	regex_t regex;
++
++	xregcomp(&regex, "^(\\$\\S+)\\s*(\\S?.*)$", REG_EXTENDED);
++
++	size_t line_len;
++	size_t line_size = 0;
++	char *line_ptr = NULL;
++	while ((line_len = getline(&line_ptr, &line_size, file_insserv))!=-1) {
++		regmatch_t matches[4] = {{0}};
++
++		if (!line_len)
++			continue;
++
++		if (*line_ptr == '#')
++			continue;
++
++		line_ptr[--line_len] = 0;	/* cutting-off '\n' */
++
++		if (!regexec(&regex, line_ptr, 3, matches, 0)) {
++			char *virtual    = xstrdup(&line_ptr[matches[1].rm_so]);	/* TODO: free() this */
++			virtual[ matches[1].rm_eo - matches[1].rm_so] = 0;
++			if (*virtual == '$')
++				virtual++;
++
++			char *services = xstrdup(&line_ptr[matches[2].rm_so]);	/* TODO: free() this */
++			services[matches[2].rm_eo - matches[2].rm_so] = 0;
++
++			/* $virtual:	+service +service +service +service	*/
++			/*			      services			*/
++
++			char services_unrolled[BUFSIZ], *services_unrolled_ptr = services_unrolled, *services_unrolled_end = &services_unrolled[BUFSIZ];
++
++			void parse_insserv_parse_service(char *service, void *arg) {
++				const char *services;
++				switch (*service) {
++					case '$':
++						service++;
++						services = lsb_v2s(service);
++						break;
++					default:
++						services = service;
++						break;
++				}
++				if (services == NULL)
++					return;
++
++				size_t len = strlen(services);
++
++				if (&services_unrolled_ptr[len] >= services_unrolled_end) {
++					fprintf(stderr, "Error: Too long field value.\n");
++					exit(EOVERFLOW);
++				}
++
++				memcpy(services_unrolled_ptr, services, len);
++				services_unrolled_ptr = &services_unrolled_ptr[len];
++				*(services_unrolled_ptr++) = ' ';
++			}
++
++			services_foreach(services, (services_foreach_funct_t)parse_insserv_parse_service, NULL);
++			*(--services_unrolled_ptr) = 0;
++
++			lsb_v2s_add(virtual, xstrdup(services_unrolled));
++		}
++	}
++
++	fclose(file_insserv);
++}
++
++void lsb_init()
++{
++	/* Hardcoded: */
++	ENTRY entries_v2s[] = {
++		{"all",			"+"SERVICENAME_ALL},
++		{NULL,			NULL},
++	};
++	ENTRY entries_s2v[] = {
++		{SERVICENAME_ALL,	"all"},
++		{NULL,			NULL},
++	};
++
++
++	/* Initialization: */
++	hcreate_r(HT_SIZE_VSRV,	&ht_lsb_v2s);
++	hcreate_r(HT_SIZE_VSRV,	&ht_lsb_s2v);
++	hcreate_r(MAX_need,	&need_ht);
++	hcreate_r(MAX_use,	&use_ht);
++	hcreate_r(MAX_before,	&before_ht);
++	hcreate_r(MAX_provide,	&provide_ht);
++
++	ENTRY *entry_ptr, *entry_res_ptr;
++
++	/* Remembering hardcoded values: */
++	entry_ptr = entries_v2s;
++	while (entry_ptr->key != NULL) {
++		hsearch_r(*entry_ptr, ENTER, &entry_res_ptr, &ht_lsb_v2s);
++		entry_ptr++;
++	}
++	entry_ptr = entries_s2v;
++	while (entry_ptr->key != NULL) {
++		hsearch_r(*entry_ptr, ENTER, &entry_res_ptr, &ht_lsb_s2v);
++		entry_ptr++;
++	}
++
++	/* Parse /etc/insserv.conf */
++	parse_insserv();
++}
++
++static inline const char *lsb_x2x(const char *const lsb_virtual, hsearch_data_t *ht)
++{
++	ENTRY entry, *entry_ptr;
++
++	entry.key = (char *)lsb_virtual;
++
++	hsearch_r(entry, FIND, &entry_ptr, ht);
++	if (entry_ptr != NULL)
++		return entry_ptr->data;
++
++	return NULL;
++}
++
++const char *lsb_v2s(const char *const lsb_virtual)
++{
++	return lsb_x2x(lsb_virtual, &ht_lsb_v2s);
++}
++
++#if 0
++const char *lsb_s2v(const char *const lsb_virtual)
++{
++	return lsb_x2x(lsb_virtual, &ht_lsb_s2v);
++}
++#endif
++#if 0
++char *lsb_expand(const char *const _services, int *has_Sall)
++{
++	char *ret = xmalloc(BUFSIZ);
++	char *ptr = ret, *ret_end = &ret[BUFSIZ];
++
++	char *services = xstrdup(_services);
++
++	void lsb_expand_parse_service(const char *service, void *arg) {
++		switch (*service) {
++			case '$': {
++				const char * const service_expanded = lsb_v2s(&service[1]);
++				if (has_Sall != NULL)
++					has_Sall = (strcmp(&service[1], "all") == 0);
++
++				if (service_expanded == NULL)
++					return;
++
++				service = service_expanded;
++				break;
++			}
++
++		}
++
++		size_t service_len = strlen(service);
++		if (&ptr[service_len+2] > ret_end) {
++			fprintf(stderr, "Error: Services list line is too long: %s\n", services);
++			exit(EMSGSIZE);
++		}
++		memcpy(ptr, service, service_len);
++		ptr += service_len;
++		*(ptr++) = ' ';
++	}
++
++	services_foreach(services, lsb_expand_parse_service, NULL);
++
++	*(--ptr) = 0;
++
++	free(services);
++	return ret;
++}
++#endif
++static void lsb_header_parse(const char *const header, char *value)
++{
++	if (!strcmp(header, "provides")) {
++		PROVIDE(value);
++	} else
++	if (!strcmp(header, "required-start") || !strcmp(header, "required-stop")) {
++		NEED(value);
++	} else
++/*	if (!strcmp(header, "default-start")) {
++	} else
++	if (!strcmp(header, "default-stop")) {
++	} else*/
++	if (!strcmp(header, "short-description")) {
++		description = value;
++	} else
++/*	if (!strcmp(header, "description")) {
++	} else*/
++	if (!strcmp(header, "should-start") || !strcmp(header, "should-stop")) {
++		USE(value);
++	} else
++	if (!strcmp(header, "x-start-before") || !strcmp(header, "x-stop-after")) {
++		BEFORE(value);
++	} else
++	{}
++
++	return;
++}
++
++char *strtolower(char *_str)
++{
++	char *str = _str;
++	while (*str) *(str++) |= 0x20;
++	return _str;
++}
++
++lsb_parse_state_t lsb_parse(const char *initdscript)
++{
++	FILE *file_initdscript = fopen(initdscript, "r");
++
++	if (file_initdscript == NULL) {
++		fprintf(stderr, "Error: Unable to read \"%s\": %i: %s\n",
++			initdscript, errno, strerror(errno));
++		exit(errno);
++	}
++
++	regex_t regex_start, regex_header, regex_end;
++
++	xregcomp(&regex_start,  "^### BEGIN INIT INFO\\s*$",        REG_EXTENDED);
++	xregcomp(&regex_header, "^#\\s*(\\S+):\\s\\s*(.*\\S)\\s*$", REG_EXTENDED);
++	xregcomp(&regex_end,    "^### END INIT INFO\\s*$",          REG_EXTENDED);
++
++	lsb_parse_state_t state = LP_STARTED;
++	size_t line_len;
++	size_t line_size = 0;
++	char *line_ptr = NULL;
++	while ((line_len = getline(&line_ptr, &line_size, file_initdscript))!=-1) {
++		if (!line_len)
++			continue;
++
++		line_ptr[--line_len] = 0;	/* cutting-off '\n' */
++
++		switch (state) {
++			case LP_STARTED: {
++				if (!regexec(&regex_start, line_ptr, 0, NULL, 0)) {
++					state = LP_PARSING_LSB;
++					continue;
++				}
++				break;
++			}
++			case LP_PARSING_LSB: {
++				regmatch_t matches[4] = {{0}};
++
++				if (!regexec(&regex_header, line_ptr, 3, matches, 0)) {
++					char *header = xstrdup(&line_ptr[matches[1].rm_so]);
++					header[matches[1].rm_eo - matches[1].rm_so] = 0;
++
++					char *value  = xstrdup(&line_ptr[matches[2].rm_so]);	/* TODO: free() this */
++					value[ matches[2].rm_eo - matches[2].rm_so] = 0;
++
++					lsb_header_parse(strtolower(header), value);
++
++					free(header);
++				} else
++				if (!regexec(&regex_end, line_ptr, 0, NULL, 0)) {
++					state = LP_COMPLETE;
++					goto l_lsb_parse_end;
++				}
++				break;
++			}
++			case LP_COMPLETE:
++				goto l_lsb_parse_end;
++		}
++	}
++
++l_lsb_parse_end:
++
++	if (state == LP_COMPLETE)
++		if (! (use_arg.relation_has_all || need_arg.relation_has_all))
++			PROVIDE(SERVICENAME_ALL);
++
++	fclose(file_initdscript);
++	return state;
++}
++
++static inline void print_relation(char **relation)
++{
++	char **ptr = relation;
++	while (*ptr != NULL) {
++		printf(" %s", *ptr);
++		ptr++;
++	}
++
++	return;
++}
++
++void lsb_print_orc()
++{
++	if (description != NULL)
++		printf("description=\"%s\"\n\n", description);
++
++	printf("%s", "depend () {\n");
++
++	if (*provide != NULL) {
++		printf("%s", "\tprovide");
++		print_relation(provide);
++		printf("\n");
++	} else
++		printf("\tprovide %s\n", service_me);
++	if (*use != NULL) {
++		printf("%s", "\tuse");
++		print_relation(use);
++		printf("\n");
++	}
++	if (*need != NULL) {
++		printf("%s", "\tneed");
++		print_relation(need);
++		printf("\n");
++	}
++	if (*before != NULL) {
++		printf("%s", "\tbefore");
++		print_relation(before);
++		printf("\n");
++	}
++	printf("}\n");
++
++	return;
++}
++
++int main(int argc, char *argv[])
++{
++	if (argc <= 1)
++		syntax();
++
++	const char *initdscript = argv[1];
++	service_me		= basename(xstrdup(initdscript));
++
++	if (access(initdscript, R_OK)) {
++		fprintf(stderr, "Cannot get read access to file \"%s\": %i: %s\n",
++			initdscript, errno, strerror(errno));
++		exit(errno);
++	}
++
++	lsb_init();
++
++	if (lsb_parse(initdscript) == LP_COMPLETE)
++		lsb_print_orc();
++
++	exit(0);
++}

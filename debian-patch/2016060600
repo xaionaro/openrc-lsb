@@ -5,7 +5,7 @@ Description: This patch adds support for the sysv-rc LSB headers
  issue.
 Author: Dmitry Yu Okunev <dyokunev@ut.mephi.ru> 0x8E30679C, heroxbd <heroxbd@gentoo.org>
 Origin: upstream
-Date: 2014-02-09
+Date: 2016-06-06
 
 Index: openrc/sh/gendepends.sh.in
 ===================================================================

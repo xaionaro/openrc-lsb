@@ -63,23 +63,22 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define hsearch_data_t void *
 
 #define hsearch_r(...) hsearch_r_2_tsearch(__VA_ARGS__)
+int _hsearch_r_2_tsearch_compare(const ENTRY *a, const ENTRY *b) {
+	return strcmp(a->key, b->key);
+}
 static inline int hsearch_r_2_tsearch(ENTRY item, ACTION action, ENTRY **retval, hsearch_data_t *htab) {
-	int hsearch_r_2_tsearch_compare(const ENTRY *a, const ENTRY *b) {
-		return strcmp(a->key, b->key);
-	}
-
 	ENTRY **tret = NULL;
 
 	switch (action) {
 		case FIND: {
-			tret = tfind  (&item,      htab, (int (*)(const void *, const void *))hsearch_r_2_tsearch_compare);
+			tret = tfind  (&item,      htab, (int (*)(const void *, const void *))_hsearch_r_2_tsearch_compare);
 			break;
 		}
 		case ENTER: {
 			ENTRY *item_dup_p = xmalloc(sizeof(item));
 			item_dup_p->key  = xstrdup(item.key);
 			item_dup_p->data = item.data;
-			tret = tsearch(item_dup_p, htab, (int (*)(const void *, const void *))hsearch_r_2_tsearch_compare);
+			tret = tsearch(item_dup_p, htab, (int (*)(const void *, const void *))_hsearch_r_2_tsearch_compare);
 			break;
 		}
 	}
@@ -228,10 +227,7 @@ void relation_add(const char *const _service, struct relation_arg *arg_p)
 
 				const char *const services = lsb_v2s(service);
 				if (services != NULL) {
-					void relation_add_mark_real_service(char *service, void *arg) {
-						relation_add_oneservice(service, arg_p);
-					}
-					services_foreach(services, (services_foreach_funct_t)relation_add_mark_real_service, NULL);
+					services_foreach(services, (services_foreach_funct_t)relation_add_oneservice, arg_p);
 				}
 				break;
 			}
@@ -302,6 +298,39 @@ static const int xregcomp(regex_t *preg, const char *regex, int cflags)
 	return r;
 }
 
+struct services_unrolled_buffer {
+	char  start[BUFSIZ];
+	char *ptr;
+	char *end;
+};
+typedef struct services_unrolled_buffer services_unrolled_buffer_t;
+
+void parse_insserv_parse_service(char *service, services_unrolled_buffer_t *buf) {
+	const char *services;
+	switch (*service) {
+		case '$':
+			service++;
+			services = lsb_v2s(service);
+			break;
+		default:
+			services = service;
+			break;
+	}
+	if (services == NULL)
+		return;
+
+	size_t len = strlen(services);
+
+	if (&buf->ptr[len] >= buf->end) {
+		fprintf(stderr, "Error: Too long field value.\n");
+		exit(EOVERFLOW);
+	}
+
+	memcpy(buf->ptr, services, len);
+	buf->ptr = &buf->ptr[len];
+	*(buf->ptr++) = ' ';
+}
+
 void parse_insserv()
 {
 	FILE *file_insserv = fopen(PATH_INSSERV, "r");
@@ -340,38 +369,15 @@ void parse_insserv()
 			/* $virtual:	+service +service +service +service	*/
 			/*			      services			*/
 
-			char services_unrolled[BUFSIZ], *services_unrolled_ptr = services_unrolled, *services_unrolled_end = &services_unrolled[BUFSIZ];
+			services_unrolled_buffer_t buf;
+			buf.end = &buf.start[BUFSIZ];
 
-			void parse_insserv_parse_service(char *service, void *arg) {
-				const char *services;
-				switch (*service) {
-					case '$':
-						service++;
-						services = lsb_v2s(service);
-						break;
-					default:
-						services = service;
-						break;
-				}
-				if (services == NULL)
-					return;
+			buf.ptr =  buf.start;
 
-				size_t len = strlen(services);
+			services_foreach(services, (services_foreach_funct_t)parse_insserv_parse_service, &buf);
+			*(--buf.ptr) = 0;
 
-				if (&services_unrolled_ptr[len] >= services_unrolled_end) {
-					fprintf(stderr, "Error: Too long field value.\n");
-					exit(EOVERFLOW);
-				}
-
-				memcpy(services_unrolled_ptr, services, len);
-				services_unrolled_ptr = &services_unrolled_ptr[len];
-				*(services_unrolled_ptr++) = ' ';
-			}
-
-			services_foreach(services, (services_foreach_funct_t)parse_insserv_parse_service, NULL);
-			*(--services_unrolled_ptr) = 0;
-
-			lsb_v2s_add(virtual, xstrdup(services_unrolled));
+			lsb_v2s_add(virtual, xstrdup(buf.start));
 		}
 	}
 
@@ -449,7 +455,7 @@ char *lsb_expand(const char *const _services, int *has_Sall)
 
 	char *services = xstrdup(_services);
 
-	void lsb_expand_parse_service(const char *service, void *arg) {
+	void lsb_expand_parse_service(const char *service, void *arg) {		// TODO: there shouldn't be any nested function, it conflicts with PAX-kernels, see https://github.com/xaionaro/openrc-lsb/issues/2
 		switch (*service) {
 			case '$': {
 				const char * const service_expanded = lsb_v2s(&service[1]);

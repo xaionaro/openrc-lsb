@@ -1,7 +1,7 @@
 /*
     lsb2rcconf - prints configuration for openrc's rc.conf based on LSB
 
-Copyright (c) 2014, Dmitry Yu Okunev <dyokunev@ut.mephi.ru> 0x8E30679C
+Copyright (c) 2014-2016, Dmitry Yu Okunev <dyokunev@ut.mephi.ru> 0x8E30679C
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without

@@ -63,10 +63,12 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define hsearch_data_t void *
 
 #define hsearch_r(...) hsearch_r_2_tsearch(__VA_ARGS__)
-int _hsearch_r_2_tsearch_compare(const ENTRY *a, const ENTRY *b) {
+int _hsearch_r_2_tsearch_compare(const ENTRY *a, const ENTRY *b)
+{
 	return strcmp(a->key, b->key);
 }
-static inline int hsearch_r_2_tsearch(ENTRY item, ACTION action, ENTRY **retval, hsearch_data_t *htab) {
+static inline int hsearch_r_2_tsearch(ENTRY item, ACTION action, ENTRY **retval, hsearch_data_t *htab)
+{
 	ENTRY **tret = NULL;
 
 	switch (action) {
@@ -93,7 +95,8 @@ static inline int hsearch_r_2_tsearch(ENTRY item, ACTION action, ENTRY **retval,
 }
 
 #define hcreate_r(...) hcreate_r_2_nop(__VA_ARGS__)
-static inline int hcreate_r_2_nop(size_t nel, hsearch_data_t *htab) {
+static inline int hcreate_r_2_nop(size_t nel, hsearch_data_t *htab)
+{
 	return 1;
 }
 
@@ -305,7 +308,8 @@ struct services_unrolled_buffer {
 };
 typedef struct services_unrolled_buffer services_unrolled_buffer_t;
 
-void parse_insserv_parse_service(char *service, services_unrolled_buffer_t *buf) {
+void parse_insserv_parse_service(char *service, services_unrolled_buffer_t *buf)
+{
 	const char *services;
 	switch (*service) {
 		case '$':
